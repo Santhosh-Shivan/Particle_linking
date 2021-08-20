@@ -276,3 +276,32 @@ def MergeMasks(fraction_gold=1):
         return np.stack(masks, axis=-1)
 
     return inner
+
+
+def GetValidationSet(loader: dt.Feature = None, size=None, **kwargs):
+    """
+    Returns a validation set from a given loader
+    Parameters
+    ----------
+    loader: dt.Feature
+        data loader
+    size: int, optional
+        size of the validation set
+    """
+    # Lists of graphs and solutions
+    graphs = [[], []]
+    solutions = [[], []]
+
+    for _ in range(size):
+        # Update the loader
+        loader.update(validation=True)
+
+        # Resolve the features
+        graph, solution = loader.resolve()
+
+        # Append the graphs and solutions
+        for i, (g, s) in enumerate(zip(graph, solution)):
+            graphs[i].append(np.array(g))
+            solutions[i].append(np.array(s))
+
+    return graphs, solutions
