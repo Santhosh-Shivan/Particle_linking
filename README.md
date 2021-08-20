@@ -1,3 +1,3 @@
 # graphtrack
 
-- [ ] Implement the `GetScales()` function. 
+- [ ] Implement the graphs/`GetScales()` function. 
