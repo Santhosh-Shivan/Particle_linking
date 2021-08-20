@@ -142,7 +142,6 @@ def GetLoaders(
             )
             for _sequence in sequence
         ],
-        # printer=lambda path: print(path),
         **root.properties
     )
 
@@ -156,7 +155,6 @@ def GetLoaders(
             )
             for _sequence in sequence
         ],
-        printer=lambda path: print(path),
         **root.properties
     )
 
