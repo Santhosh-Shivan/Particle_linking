@@ -39,8 +39,6 @@ def GraphCategoricalCrossEntropy(from_logits=False, **kwargs):
         # Compute the loss over the nodes.
         node_loss = loss_fn(T[0], P[0])
 
-        print(P[0])
-
         # Compute the loss over the edges.
         edge_loss = loss_fn(T[1], P[1])
 
