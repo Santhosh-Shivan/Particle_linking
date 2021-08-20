@@ -156,6 +156,7 @@ def GetLoaders(
             )
             for _sequence in sequence
         ],
+        printer=lambda path: print(path),
         **root.properties
     )
 
@@ -294,10 +295,10 @@ def GetValidationSet(loader: dt.Feature = None, size=None, **kwargs):
 
     for _ in range(size):
         # Update the loader
-        loader.update(validation=True)
+        loader.update()
 
         # Resolve the features
-        graph, solution = loader.resolve()
+        graph, solution = loader.resolve(validation=True)
 
         # Append the graphs and solutions
         for i, (g, s) in enumerate(zip(graph, solution)):
