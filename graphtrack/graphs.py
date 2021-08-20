@@ -353,7 +353,7 @@ def GraphExtractor(sequence: dt.Feature = None, **kwargs):
     )
 
     # Split the dataframe into features and labels
-    features, fsolution = DataframeSplitter(
+    nodefeatures, nfsolution = DataframeSplitter(
         nodesdf, props=properties, **kwargs
     )
 
@@ -362,4 +362,4 @@ def GraphExtractor(sequence: dt.Feature = None, **kwargs):
         edgesdf, props=("feature",), **kwargs
     )
 
-    return (features, fsolution), (edgefeatures, efsolution)
+    return (nodefeatures, edgefeatures), (nfsolution, efsolution)
