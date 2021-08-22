@@ -277,7 +277,78 @@ def MergeMasks(fraction_gold=1):
     return inner
 
 
-def GetValidationSet(loader: dt.Feature = None, size=None, **kwargs):
+class ContinuousGraphGenerator(dt.generators.ContinuousGenerator):
+    """
+    Generator that asynchronously generates graph representations.
+
+    The generator aims to speed up the training of networks by striking a
+    balance between the generalization gained by generating new images and
+    the speed gained from reusing images. The generator will continuously
+    create new trainingdata during training, until `max_data_size` is reached,
+    at which point the oldest data point is replaced.
+
+    Parameters
+    ----------
+    feature : dt.Feature
+        The feature to resolve the graphs from.
+    label_function : Callable
+        Function that returns the label corresponding to a feature output.
+    batch_function : Callable
+        Function that returns the training data corresponding a feature output.
+    min_data_size : int
+        Minimum size of the training data before training starts
+    max_data_set : int
+        Maximum size of the training data before old data is replaced.
+    batch_size : int or Callable[int, int] -> int
+        Number of images per batch. A function is expected to accept the current epoch
+        and the size of the training data as input.
+    shuffle_batch : bool
+        If True, the batches are shuffled before outputting.
+    feature_kwargs : dict or list of dicts
+        Set of options to pass to the feature when resolving
+    ndim : int
+        Number of dimensions of each batch (including the batch dimension).
+    """
+
+    def __getitem__(self, idx):
+        # TODO: implement batching @JesusPinedaC
+        batch, labels = super().__getitem__(idx)
+
+        return batch, labels
+
+
+conf = {}
+
+
+def GraphGenerator(min_data_size=1000, max_data_size=2000, **kwargs):
+    """
+    Returns a generator that generates graphs asynchronously.
+    Parameters
+    ----------
+    min_data_size : int
+        Minimum size of the training data before training starts
+    max_data_size : int
+        Maximum size of the training data before old data is replaced.
+    kwargs : dict
+        Keyword arguments to pass to the features.
+    """
+    feature = GetLoaders(**kwargs)
+
+    conf["feature"] = feature
+
+    args = {
+        "feature": feature,
+        "batch_function": lambda graph: graph[0],
+        "label_function": lambda graph: graph[1],
+        "min_data_size": min_data_size,
+        "max_data_size": max_data_size,
+        **kwargs,
+    }
+
+    return dt.utils.safe_call(ContinuousGraphGenerator, **args)
+
+
+def GetValidationSet(size=None, **kwargs):
     """
     Returns a validation set from a given loader
     Parameters
@@ -287,6 +358,9 @@ def GetValidationSet(loader: dt.Feature = None, size=None, **kwargs):
     size: int, optional
         size of the validation set
     """
+    # Get the data loader
+    loader = conf["feature"]
+
     # Lists of graphs and solutions
     graphs = [[], []]
     solutions = [[], []]
