@@ -148,8 +148,7 @@ def GetEdge(
     Parameters
     ----------
     df: pd.DataFrame
-        A dataframe containing the extracted
-        properties of the cell images.
+        A dataframe containing the extracted node properties.
     start: int
         Start frame of the edge.
     end: int
@@ -209,13 +208,9 @@ def GetEdge(
     # dataframe for the whole set of edges
     edgedf = pd.concat(edges)
 
-    # Merge columns contaning the labels and indexes into a single
-    # column of numpy arrays, i.e., label = [label_x, label_y] and
-    # index = [index_x, index_y]
+    # Merge columns contaning the labels into a single column
+    # of numpy arrays, i.e., label = [label_x, label_y]
     edgedf.loc[:, "label"] = edgedf.filter(like="label").apply(
-        np.array, axis=1
-    )
-    edgedf.loc[:, "index"] = edgedf.filter(like="label").apply(
         np.array, axis=1
     )
 
@@ -235,18 +230,19 @@ def GetEdge(
     return AppendSolution(edgedf, GetSolution)
 
 
-def EdgeExtractor(df, nofframes=2, **kwargs):
+def EdgeExtractor(nodesdf, nofframes=2, **kwargs):
     """
     Extracts edges from a sequence of frames
     Parameters
     ----------
-    df: pd.DataFrame
-        A dataframe containing the extracted
-        properties of the cell images.
+    nodesdf: pd.DataFrame
+        A dataframe containing the extracted node properties.
     noframes: int
         Number of frames to be used for
         the edge extraction.
     """
+    df = nodesdf.copy()
+
     # Create subsets from the frame list, with
     # "nofframes" elements each
     maxframe = range(0, df["frame"].max() + 1)
@@ -328,12 +324,23 @@ def DataframeSplitter(df, props: tuple, to_array=True, **kwargs):
     # Extract labels from the dataframe
     label = df["solution"]
 
+    if "index_x" in df:
+        outputs = [features, df.filter(like="index"), label]
+    else:
+        outputs = [features, label]
+
     # Convert features to numpy arrays if needed
     if to_array:
-        features = np.stack(features.apply(np.array, axis=1).values)
-        label = np.stack(label.values)
+        outputs = list(
+            map(
+                lambda x: np.stack(x.apply(np.array, axis=1).values),
+                outputs[:-1],
+            )
+        ) + [
+            np.stack(outputs[-1].values),
+        ]
 
-    return features, label
+    return outputs
 
 
 def GraphExtractor(sequence: dt.Feature = None, **kwargs):
@@ -352,14 +359,17 @@ def GraphExtractor(sequence: dt.Feature = None, **kwargs):
         nodesdf, nofframes=3, parenthood=parenthood, **kwargs
     )
 
-    # Split the dataframe into features and labels
+    # Split the nodes dataframe into features and labels
     nodefeatures, nfsolution = DataframeSplitter(
         nodesdf, props=properties, **kwargs
     )
 
-    # Split the dataframe into features and labels
-    edgefeatures, efsolution = DataframeSplitter(
+    # Split the edges dataframe into features and labels
+    edgefeatures, sparseadjmtx, efsolution = DataframeSplitter(
         edgesdf, props=("feature",), **kwargs
     )
 
-    return (nodefeatures, edgefeatures), (nfsolution, efsolution)
+    return (
+        (nodefeatures, edgefeatures, sparseadjmtx),
+        (nfsolution, efsolution),
+    )
