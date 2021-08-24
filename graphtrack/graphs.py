@@ -170,7 +170,7 @@ def GetEdge(
 
     # Filter the dataframe to only include the the
     # frames, centroids, labels, and indexes
-    df = df.loc[(df["frame"] >= start) & (df["frame"] < end)].filter(
+    df = df.loc[(df["frame"] >= start) & (df["frame"] <= end)].filter(
         regex="(frame|centroid|label|index)"
     )
 
