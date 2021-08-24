@@ -336,6 +336,9 @@ def GraphGenerator(min_data_size=1000, max_data_size=2000, **kwargs):
 
     conf["feature"] = feature
 
+    # Removes augmentation from kwargs
+    kwargs.pop("augmentation", None)
+
     args = {
         "feature": feature,
         "batch_function": lambda graph: graph[0],
