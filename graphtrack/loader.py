@@ -311,10 +311,36 @@ class ContinuousGraphGenerator(dt.generators.ContinuousGenerator):
     """
 
     def __getitem__(self, idx):
-        # TODO: implement batching @JesusPinedaC
         batch, labels = super().__getitem__(idx)
 
-        return batch, labels
+        # Extracts minimum number of nodes in the batch
+        crop_to = np.min(
+            list(map(lambda _batch: np.shape(_batch[0])[0], batch))
+        )
+
+        inputs, outputs = [[], [], []], [[], []]
+        for i in range(batch.shape[0]):
+            # Appends the cropped nodes to the batch
+            inputs[0].append(batch[i][0][:crop_to, :])
+
+            # Gets index of the last node in the adjacency matrix
+            maxedgeidx = np.where(batch[0][2][:, 1] == crop_to)[0][0]
+
+            # Appends the cropped edge features and adjacency
+            # matrix to the batch
+            inputs[1].append(batch[i][1][: int(maxedgeidx), :])
+            inputs[2].append(batch[i][2][: int(maxedgeidx), :])
+
+            # Appends the cropped node and edge labels to
+            # the output list
+            outputs[0].append(labels[i][0][:crop_to, :])
+            outputs[1].append(labels[i][1][: int(maxedgeidx), :])
+
+        # Converts to numpy arrays
+        inputs = list(map(np.array, inputs))
+        outputs = list(map(np.array, outputs))
+
+        return inputs, outputs
 
 
 conf = {}
