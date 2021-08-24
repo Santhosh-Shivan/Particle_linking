@@ -39,7 +39,6 @@ def NodeExtractor(
         Size of the cropped cell images.
     resize_shape: tuple, optional
         Shape of the resized cropped cell images.
-
     Returns
     -------
     nodes: pd.DataFrame
@@ -241,6 +240,7 @@ def EdgeExtractor(nodesdf, nofframes=2, **kwargs):
         Number of frames to be used for
         the edge extraction.
     """
+    # Create a copy of the dataframe to avoid overwriting
     df = nodesdf.copy()
 
     # Create subsets from the frame list, with
@@ -364,7 +364,8 @@ def GraphExtractor(sequence: dt.Feature = None, **kwargs):
         nodesdf, props=properties, **kwargs
     )
 
-    # Split the edges dataframe into features and labels
+    # Split the edges dataframe into features, sparse adjacency
+    # matrix, and labels
     edgefeatures, sparseadjmtx, efsolution = DataframeSplitter(
         edgesdf, props=("feature",), **kwargs
     )
