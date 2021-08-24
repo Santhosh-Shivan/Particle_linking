@@ -324,17 +324,17 @@ class ContinuousGraphGenerator(dt.generators.ContinuousGenerator):
             inputs[0].append(batch[i][0][:crop_to, :])
 
             # Gets index of the last node in the adjacency matrix
-            maxedgeidx = np.where(batch[0][2][:, 1] == crop_to)[0][0]
+            lastnodeidx = np.where(batch[0][2][:, 1] == crop_to)[0][0]
 
             # Appends the cropped edge features and adjacency
             # matrix to the batch
-            inputs[1].append(batch[i][1][: int(maxedgeidx), :])
-            inputs[2].append(batch[i][2][: int(maxedgeidx), :])
+            inputs[1].append(batch[i][1][: int(lastnodeidx), :])
+            inputs[2].append(batch[i][2][: int(lastnodeidx), :])
 
             # Appends the cropped node and edge labels to
             # the output list
             outputs[0].append(labels[i][0][:crop_to, :])
-            outputs[1].append(labels[i][1][: int(maxedgeidx), :])
+            outputs[1].append(labels[i][1][: int(lastnodeidx), :])
 
         # Converts to numpy arrays
         inputs = list(map(np.array, inputs))
