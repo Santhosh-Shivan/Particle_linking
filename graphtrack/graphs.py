@@ -374,3 +374,58 @@ def GraphExtractor(sequence: dt.Feature = None, **kwargs):
         (nodefeatures, edgefeatures, sparseadjmtx),
         (nfsolution, efsolution),
     )
+
+
+def SelfDuplicateEdgeAugmentation(edges, maxnofedges=None, idxs=None):
+    """
+    Augments edges by randomly adding edges to the graph. The new edges
+    are copies of the original edges, and their influence to the solution
+    is pondered using uniformely distributed weights.
+    Parameters
+    ----------
+    edges : list of numpy arrays
+        List of edges to augment
+    maxnofedges : int, optional
+        Maximum number of edges to add to the graph. If None, the maximum
+        number of edges is set to the number of edges in the graph.
+    idxs : list of numpy arrays, optional
+        List of indices of the edges to be augmented. If None, the edges
+        are selected randomly.
+    """
+    weights = []
+    use_idxs = True if idxs else False
+    idxs = idxs if use_idxs else []
+
+    def inner(items):
+        itr, edge = items
+        edge = np.array(edge)
+
+        # Computes the number of additional edges to add
+        nofedges = np.shape(edge)[0]
+        offset = maxnofedges - nofedges
+
+        # Randomly selects edges to duplicate
+        if use_idxs:
+            idx = idxs[itr]
+        else:
+            idx = np.random.choice(nofedges, offset, replace=False)
+            idxs.append(idx)
+
+        # Initiliazes the weights to 1
+        w = np.ones(nofedges)
+
+        # Add indexes to the weight matrix
+        w = np.stack((np.arange(0, w.shape[0]), w), axis=1)
+
+        # Balances repeated edges
+        w[idx, 1] = 0.5
+
+        # Augment the weights
+        w = np.concatenate((w, w[idx]), axis=0)
+        weights.append(w)
+
+        # Duplicate the edges
+        edge = np.concatenate((edge, edge[idx, :]), axis=0)
+        return edge
+
+    return list(map(inner, enumerate(edges))), weights, idxs

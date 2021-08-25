@@ -314,27 +314,55 @@ class ContinuousGraphGenerator(dt.generators.ContinuousGenerator):
         batch, labels = super().__getitem__(idx)
 
         # Extracts minimum number of nodes in the batch
-        crop_to = np.min(
+        cropNodesTo = np.min(
             list(map(lambda _batch: np.shape(_batch[0])[0], batch))
         )
 
-        inputs, outputs = [[], [], []], [[], []]
-        for i in range(batch.shape[0]):
-            # Appends the cropped nodes to the batch
-            inputs[0].append(batch[i][0][:crop_to, :])
+        inputs, outputs, nofedges = [[], [], []], [[], []], []
 
-            # Gets index of the last node in the adjacency matrix
-            lastnodeidx = np.where(batch[0][2][:, 1] == crop_to)[0][0]
+        for i in range(len(batch)):
+            # Clip node features to the minimum number of nodes
+            # in the batch
+            nodef = batch[i][0][:cropNodesTo, :]
+            inputs[0].append(nodef)
 
-            # Appends the cropped edge features and adjacency
-            # matrix to the batch
-            inputs[1].append(batch[i][1][: int(lastnodeidx), :])
-            inputs[2].append(batch[i][2][: int(lastnodeidx), :])
+            # Extracts index of the last node in the adjacency matrix
+            last_node_idx = int(
+                np.where(batch[i][2][:, 1] == cropNodesTo - 1)[0][0] + 1
+            )
 
-            # Appends the cropped node and edge labels to
-            # the output list
-            outputs[0].append(labels[i][0][:crop_to, :])
-            outputs[1].append(labels[i][1][: int(lastnodeidx), :])
+            # Clips edge features and adjacency matrix to the index
+            # of the last node
+            edgef = batch[i][1][:last_node_idx, :]
+            adjmx = batch[i][2][:last_node_idx, :]
+
+            inputs[1].append(edgef)
+            inputs[2].append(adjmx)
+
+            # Appends the number of edges in the batch
+            nofedges.append(np.shape(edgef)[0])
+
+            # Clips node and edge solutions
+            nodesol = labels[i][0][:cropNodesTo, :]
+            edgesol = labels[i][1][:last_node_idx, :]
+
+            outputs[0].append(nodesol)
+            outputs[1].append(edgesol)
+
+        maxnOfedges = np.max(nofedges)
+
+        # Edge augmentation
+        inputs[1], weights, idxs = graphs.SelfDuplicateEdgeAugmentation(
+            inputs[1], maxnofedges=maxnOfedges
+        )
+        inputs[2], *_ = graphs.SelfDuplicateEdgeAugmentation(
+            inputs[2], maxnofedges=maxnOfedges, idxs=idxs
+        )
+        inputs.append(weights)
+
+        outputs[1], *_ = graphs.SelfDuplicateEdgeAugmentation(
+            outputs[1], maxnofedges=maxnOfedges, idxs=idxs
+        )
 
         # Converts to numpy arrays
         inputs = list(map(np.array, inputs))
