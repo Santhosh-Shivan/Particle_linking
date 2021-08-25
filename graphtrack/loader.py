@@ -419,7 +419,15 @@ def GetValidationSet(size=None, **kwargs):
     loader = conf["feature"]
 
     # Lists of graphs and solutions
-    graphs = [[], []]
+    graphs = [
+        [],
+        [],
+        [],
+        [
+            None,
+        ]
+        * size,
+    ]
     solutions = [[], []]
 
     for _ in range(size):
@@ -430,8 +438,10 @@ def GetValidationSet(size=None, **kwargs):
         graph, solution = loader.resolve(validation=True)
 
         # Append the graphs and solutions
-        for i, (g, s) in enumerate(zip(graph, solution)):
+        for i, (g, s) in enumerate(itertools.zip_longest(graph, solution)):
             graphs[i].append(np.array(g))
-            solutions[i].append(np.array(s))
+
+            if not (s is None):
+                solutions[i].append(np.array(s))
 
     return graphs, solutions
