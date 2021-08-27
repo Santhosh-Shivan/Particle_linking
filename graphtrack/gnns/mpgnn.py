@@ -159,10 +159,10 @@ class mpGraphNet(tf.keras.Model):
         # and graph adjacency matrix before passing to the
         # graph neural network
         layer = [
-            encoded_nodes[tf.newaxis],
-            encoded_edge_features[tf.newaxis],
-            edges[tf.newaxis],
-            edge_weights[tf.newaxis] if not (edge_weights is None) else None,
+            encoded_nodes,
+            encoded_edge_features,
+            edges,
+            edge_weights if not (edge_weights is None) else None,
         ]
 
         # Apply graph neural network

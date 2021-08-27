@@ -347,12 +347,13 @@ class KerasGNNLayerWrapper(tf.keras.layers.Layer):
 
     def call(self, inputs):
         nodes, edge_features, edges, edge_weights = inputs
-        nodes, edge_features, edges, edge_weights = (
-            nodes[0, ...],
-            edge_features[0, ...],
-            edges[0, ...],
-            edge_weights[0, ...] if not (edge_weights is None) else None,
-        )
+        print(nodes.shape)
+        # nodes, edge_features, edges, edge_weights = (
+        #     nodes[0, ...],
+        #     edge_features[0, ...],
+        #     edges[0, ...],
+        #     edge_weights[0, ...] if not (edge_weights is None) else None,
+        # )
 
         nOfnodes, nOffeatures, nOfedges, batch_size = (
             tf.shape(nodes)[1],
@@ -361,18 +362,17 @@ class KerasGNNLayerWrapper(tf.keras.layers.Layer):
             tf.shape(nodes)[0],
         )
 
-        print(nodes.shape)
-
         # Get neighbors node features, shape = (batch, nOfedges, 2, nOffeatures)
         message_inputs = tf.gather(nodes, edges, batch_dims=1)
 
         # Concatenate nodes features with edge features,
         # shape = (batch, nOfedges, 2*nOffeatures + nOffedgefeatures)
+        messages = tf.reshape(
+            message_inputs, (batch_size, nOfedges, 2 * nOffeatures)
+        )
         reshaped = tf.concat(
             [
-                tf.reshape(
-                    message_inputs, (batch_size, nOfedges, 2 * nOffeatures)
-                ),
+                messages,
                 edge_features,
             ],
             -1,
@@ -440,10 +440,10 @@ class KerasGNNLayerWrapper(tf.keras.layers.Layer):
             self.activation,
         )
         return (
-            updated_nodes[tf.newaxis],
-            messages[tf.newaxis],
-            edges[tf.newaxis],
-            edge_weights[tf.newaxis] if not (edge_weights is None) else None,
+            updated_nodes,
+            messages,
+            edges,
+            edge_weights if not (edge_weights is None) else None,
         )
 
 
