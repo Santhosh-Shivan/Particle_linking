@@ -399,26 +399,29 @@ class KerasGNNLayerWrapper(tf.keras.layers.Layer):
             weighted_messages = messages * edge_weights[..., 1:2]
 
             # Merge repeated edges, shape = (batch, nOfedges (before augmentation), filters)
-            weighted_messages = [
-                tf.math.unsorted_segment_sum(
-                    weighted_messages[idx],
-                    tf.cast(edge_weights[idx, ..., 0], tf.int32),
-                    num_segments=tf.shape(
-                        tf.unique(edge_weights[idx, ..., 0])[0]
-                    )[0],
-                )
-                for idx in range(batch_size)
-            ]
+            def aggregate(_, x):
+                message, weights, edge = x
 
-            # Aggregate messages, shape = (batch, nOfnode, filters)
-            aggregated = [
-                tf.math.unsorted_segment_sum(
-                    weighted_messages[idx],
-                    edges[idx, : tf.shape(weighted_messages[idx])[0], 1],
+                merged_ragged_edges = tf.math.unsorted_segment_sum(
+                    message,
+                    tf.cast(weights[..., 0], tf.int32),
+                    num_segments=tf.shape(tf.unique(weights[..., 0])[0])[0],
+                )
+
+                augmented_merged_edges = tf.math.unsorted_segment_sum(
+                    merged_ragged_edges,
+                    edge[: tf.shape(merged_ragged_edges)[0], 1],
                     nOfnodes,
                 )
-                for idx in range(batch_size)
-            ]
+
+                return augmented_merged_edges
+
+            # Aggregate messages, shape = (batch, nOfnodes, filters)
+            aggregated = tf.scan(
+                aggregate,
+                (weighted_messages, edge_weights, edges),
+                initializer=tf.zeros((nOfnodes, nOffeatures)),
+            )
         else:
             # If no weights are provided, aggregate messages
             # shape = (batch, nOfnode, filters)
