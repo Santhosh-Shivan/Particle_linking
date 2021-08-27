@@ -191,7 +191,7 @@ class mpGraphNet(tf.keras.Model):
         nodes_latent, edge_features_latent, *_ = map(
             lambda x: tf.squeeze(x) if not (x is None) else None, layer
         )
-        tf.print(tf.shape(nodes_latent), tf.shape(edge_features_latent))
+
         # Decode node and edge features
         decoded_nodes = self.node_decoder(nodes_latent)
         decoded_edges = self.node_decoder(edge_features_latent)

@@ -346,7 +346,7 @@ class KerasGNNLayerWrapper(tf.keras.layers.Layer):
 
     def call(self, inputs):
         nodes, edge_features, edges, edge_weights = inputs
-        print(nodes.shape)
+
         # nodes, edge_features, edges, edge_weights = (
         #     nodes[0, ...],
         #     edge_features[0, ...],
@@ -421,6 +421,7 @@ class KerasGNNLayerWrapper(tf.keras.layers.Layer):
                 (weighted_messages, edge_weights, edges),
                 initializer=tf.zeros((nOfnodes, nOffeatures)),
             )
+
         else:
             # If no weights are provided, aggregate messages
             # shape = (batch, nOfnode, filters)
@@ -431,7 +432,7 @@ class KerasGNNLayerWrapper(tf.keras.layers.Layer):
                 for idx in range(batch_size)
             ]
 
-        aggregated = tf.stack(aggregated, axis=0)
+        # aggregated = tf.stack(aggregated, axis=0)
 
         # Update node features, (nOfnode, filters)
         Combined = [nodes, aggregated]
