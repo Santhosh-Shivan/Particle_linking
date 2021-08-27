@@ -87,20 +87,38 @@ class mpGraphNet(tf.keras.Model):
             range(len(dense_layer_dimensions)),
             reversed(dense_layer_dimensions),
         ):
-            node_decoder.append(
-                dense_block(
-                    dense_layer_dimension,
-                    name="node_idd" + str(dense_layer_number + 1),
-                    **kwargs
+            if dense_layer_number == 0:
+                node_decoder.append(
+                    dense_block(
+                        dense_layer_dimension,
+                        input_shape=(None, base_layer_dimensions[-1]),
+                        name="node_idd" + str(dense_layer_number + 1),
+                        **kwargs
+                    )
                 )
-            )
-            edge_decoder.append(
-                dense_block(
-                    dense_layer_dimension,
-                    name="edge_idd" + str(dense_layer_number + 1),
-                    **kwargs
+                edge_decoder.append(
+                    dense_block(
+                        dense_layer_dimension,
+                        input_shape=(None, base_layer_dimensions[-1]),
+                        name="edge_idd" + str(dense_layer_number + 1),
+                        **kwargs
+                    )
                 )
-            )
+            else:
+                node_decoder.append(
+                    dense_block(
+                        dense_layer_dimension,
+                        name="node_idd" + str(dense_layer_number + 1),
+                        **kwargs
+                    )
+                )
+                edge_decoder.append(
+                    dense_block(
+                        dense_layer_dimension,
+                        name="edge_idd" + str(dense_layer_number + 1),
+                        **kwargs
+                    )
+                )
         self.node_decoder = tf.keras.Sequential(node_decoder)
         self.edge_decoder = tf.keras.Sequential(edge_decoder)
 
@@ -159,10 +177,10 @@ class mpGraphNet(tf.keras.Model):
         # and graph adjacency matrix before passing to the
         # graph neural network
         layer = [
-            encoded_nodes[tf.newaxis],
-            encoded_edge_features[tf.newaxis],
-            edges[tf.newaxis],
-            edge_weights[tf.newaxis] if not (edge_weights is None) else None,
+            encoded_nodes,
+            encoded_edge_features,
+            edges,
+            edge_weights if not (edge_weights is None) else None,
         ]
 
         # Apply graph neural network
