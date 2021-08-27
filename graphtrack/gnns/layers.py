@@ -267,8 +267,7 @@ def MultiHeadSelfAttention(num_heads=12, **kwargs):
 
         def call(x):
             nodes, aggregated = x
-
-            batch_size = nodes.shape[0]
+            batch_size = tf.shape(nodes)[0]
             filters = aggregated.shape[-1]
 
             if filters % num_heads != 0:

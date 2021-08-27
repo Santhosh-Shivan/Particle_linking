@@ -87,20 +87,38 @@ class mpGraphNet(tf.keras.Model):
             range(len(dense_layer_dimensions)),
             reversed(dense_layer_dimensions),
         ):
-            node_decoder.append(
-                dense_block(
-                    dense_layer_dimension,
-                    name="node_idd" + str(dense_layer_number + 1),
-                    **kwargs
+            if dense_layer_number == 0:
+                node_decoder.append(
+                    dense_block(
+                        dense_layer_dimension,
+                        input_shape=(None, base_layer_dimensions[-1]),
+                        name="node_idd" + str(dense_layer_number + 1),
+                        **kwargs
+                    )
                 )
-            )
-            edge_decoder.append(
-                dense_block(
-                    dense_layer_dimension,
-                    name="edge_idd" + str(dense_layer_number + 1),
-                    **kwargs
+                edge_decoder.append(
+                    dense_block(
+                        dense_layer_dimension,
+                        input_shape=(None, base_layer_dimensions[-1]),
+                        name="edge_idd" + str(dense_layer_number + 1),
+                        **kwargs
+                    )
                 )
-            )
+            else:
+                node_decoder.append(
+                    dense_block(
+                        dense_layer_dimension,
+                        name="node_idd" + str(dense_layer_number + 1),
+                        **kwargs
+                    )
+                )
+                edge_decoder.append(
+                    dense_block(
+                        dense_layer_dimension,
+                        name="edge_idd" + str(dense_layer_number + 1),
+                        **kwargs
+                    )
+                )
         self.node_decoder = tf.keras.Sequential(node_decoder)
         self.edge_decoder = tf.keras.Sequential(edge_decoder)
 
@@ -173,7 +191,7 @@ class mpGraphNet(tf.keras.Model):
         nodes_latent, edge_features_latent, *_ = map(
             lambda x: tf.squeeze(x) if not (x is None) else None, layer
         )
-
+        tf.print(tf.shape(nodes_latent), tf.shape(edge_features_latent))
         # Decode node and edge features
         decoded_nodes = self.node_decoder(nodes_latent)
         decoded_edges = self.node_decoder(edge_features_latent)
