@@ -358,7 +358,7 @@ class KerasGNNLayerWrapper(tf.keras.layers.Layer):
             tf.shape(nodes)[1],
             tf.shape(nodes)[-1],
             tf.shape(edges)[1],
-            nodes.shape[0],
+            tf.shape(nodes)[0],
         )
 
         print(nodes.shape)
