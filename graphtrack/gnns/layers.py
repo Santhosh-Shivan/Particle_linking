@@ -346,19 +346,22 @@ class KerasGNNLayerWrapper(tf.keras.layers.Layer):
         self.random_edge_dropout = random_edge_dropout
 
     def call(self, inputs):
-        nodes, edge_features, edges = inputs
-        nodes, edge_features, edges = (
+        nodes, edge_features, edges, edge_weights = inputs
+        nodes, edge_features, edges, edge_weights = (
             nodes[0, ...],
             edge_features[0, ...],
             edges[0, ...],
+            edge_weights[0, ...] if not (edge_weights is None) else None,
         )
 
         nOfnodes, nOffeatures, nOfedges, batch_size = (
-            nodes.shape[1],
-            nodes.shape[-1],
-            edges.shape[1],
+            tf.shape(nodes)[1],
+            tf.shape(nodes)[-1],
+            tf.shape(edges)[1],
             nodes.shape[0],
         )
+
+        print(nodes.shape)
 
         # Get neighbors node features, shape = (batch, nOfedges, 2, nOffeatures)
         message_inputs = tf.gather(nodes, edges, batch_dims=1)
@@ -389,16 +392,44 @@ class KerasGNNLayerWrapper(tf.keras.layers.Layer):
                 noise_shape=(1, nOfedges, 1),
             )
 
-        # Aggregate messages, shape = (nOfnode, filters)
-        aggregated = tf.stack(
-            [
+        if not (edge_weights is None):
+
+            # If weights are provided, apply them to the messages
+            # shape = (batch, nOfedges, filters)
+            weighted_messages = messages * edge_weights[..., 1:2]
+
+            # Merge repeated edges, shape = (batch, nOfedges (before augmentation), filters)
+            weighted_messages = [
+                tf.math.unsorted_segment_sum(
+                    weighted_messages[idx],
+                    tf.cast(edge_weights[idx, ..., 0], tf.int32),
+                    num_segments=tf.shape(
+                        tf.unique(edge_weights[idx, ..., 0])[0]
+                    )[0],
+                )
+                for idx in range(batch_size)
+            ]
+
+            # Aggregate messages, shape = (batch, nOfnode, filters)
+            aggregated = [
+                tf.math.unsorted_segment_sum(
+                    weighted_messages[idx],
+                    edges[idx, : tf.shape(weighted_messages[idx])[0], 1],
+                    nOfnodes,
+                )
+                for idx in range(batch_size)
+            ]
+        else:
+            # If no weights are provided, aggregate messages
+            # shape = (batch, nOfnode, filters)
+            aggregated = [
                 tf.math.unsorted_segment_sum(
                     messages[idx], edges[idx, ..., 1], nOfnodes
                 )
                 for idx in range(batch_size)
-            ],
-            axis=0,
-        )
+            ]
+
+        aggregated = tf.stack(aggregated, axis=0)
 
         # Update node features, (nOfnode, filters)
         Combined = [nodes, aggregated]
@@ -408,11 +439,12 @@ class KerasGNNLayerWrapper(tf.keras.layers.Layer):
             _layer_norm(self.layer_norm, self.filters),
             self.activation,
         )
-        return [
+        return (
             updated_nodes[tf.newaxis],
             messages[tf.newaxis],
             edges[tf.newaxis],
-        ]
+            edge_weights[tf.newaxis] if not (edge_weights is None) else None,
+        )
 
 
 @register("mpgblock")

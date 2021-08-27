@@ -1,5 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras import layers
+from tensorflow.python.ops.variables import trainable_variables
 
 from ..deeptrack.models.utils import as_KerasModel
 from .layers import as_block
@@ -111,6 +112,28 @@ class mpGraphNet(tf.keras.Model):
             number_of_outputs, activation=output_activation
         )
 
+    # def train_step(self, data):
+    #     batch, labels = data
+
+    #     with tf.GradientTape() as tape:
+    #         pred = self(batch, training=True)
+
+    #         # Compute loss
+    #         loss = self.compiled_loss(
+    #             labels,
+    #             pred,
+    #         )
+
+    #         # Compute gradients
+    #         trainable_vars = self.trainable_variables
+    #         grads = tape.gradient(loss, trainable_vars)
+    #         # Update weights
+    #         self.optimizer.apply_gradients(zip(grads, trainable_vars))
+
+    #         loss = {"loss": loss}
+
+    #         return loss
+
     def call(self, inputs):
         """
         Forward pass of the graph neural network.
@@ -124,7 +147,9 @@ class mpGraphNet(tf.keras.Model):
             Node and edge features.
         """
 
-        nodes, edge_features, edges = inputs
+        nodes, edge_features, edges, edge_weights = inputs
+
+        print(nodes.shape)
 
         # Encode node and edge features
         encoded_nodes = self.node_encoder(nodes)
@@ -137,6 +162,7 @@ class mpGraphNet(tf.keras.Model):
             encoded_nodes[tf.newaxis],
             encoded_edge_features[tf.newaxis],
             edges[tf.newaxis],
+            edge_weights[tf.newaxis] if not (edge_weights is None) else None,
         ]
 
         # Apply graph neural network
@@ -144,7 +170,9 @@ class mpGraphNet(tf.keras.Model):
             layer = graph_layer(layer)
 
         # Squeeze the output of the graph neural network
-        nodes_latent, edge_features_latent, _ = map(tf.squeeze, layer)
+        nodes_latent, edge_features_latent, *_ = map(
+            lambda x: tf.squeeze(x) if not (x is None) else None, layer
+        )
 
         # Decode node and edge features
         decoded_nodes = self.node_decoder(nodes_latent)

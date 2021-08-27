@@ -365,8 +365,8 @@ class ContinuousGraphGenerator(dt.generators.ContinuousGenerator):
         )
 
         # Converts to numpy arrays
-        inputs = list(map(np.array, inputs))
-        outputs = list(map(np.array, outputs))
+        inputs = tuple(map(np.array, inputs))
+        outputs = tuple(map(np.array, outputs))
 
         return inputs, outputs
 
