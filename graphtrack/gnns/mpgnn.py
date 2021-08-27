@@ -1,13 +1,15 @@
 import tensorflow as tf
 from tensorflow.keras import layers
-from tensorflow.python.ops.variables import trainable_variables
 
-from ..deeptrack.models.utils import as_KerasModel
+from ..deeptrack.models.utils import KerasModel
 from .layers import as_block
 
+from .layers import GraphLayer as graphblock
 
-@as_KerasModel
-class mpGraphNet(tf.keras.Model):
+from ..losses import GraphCategoricalCrossEntropy
+
+
+class mpGraphNet(KerasModel):
     """
     Message passing graph neural network.
     Parameters:
@@ -36,169 +38,84 @@ class mpGraphNet(tf.keras.Model):
         self,
         dense_layer_dimensions=(32, 72),
         base_layer_dimensions=(72, 72),
+        number_of_node_features=7,
+        number_of_edge_features=7,
         number_of_outputs=3,
         output_activation=None,
-        dense_block="_dense",
-        graph_block="mpgblock",
+        dense_block="graphdense",
+        loss=GraphCategoricalCrossEntropy,
         **kwargs
     ):
-        super().__init__()
 
         dense_block = as_block(dense_block)
-        graph_block = as_block(graph_block)
+        graph_block = graphblock
+
+        node_features, edge_features, edges, edge_weights = (
+            tf.keras.Input(shape=(None, number_of_node_features)),
+            tf.keras.Input(shape=(None, number_of_edge_features)),
+            tf.keras.Input(shape=(None, 2), dtype=tf.int32),
+            tf.keras.Input(shape=(None, 2)),
+        )
+
+        node_layer = node_features
+        edge_layer = edge_features
 
         # Create seperate graph encoder for node and edge features
-        node_encoder, edge_encoder = [], []
         for dense_layer_number, dense_layer_dimension in zip(
             range(len(dense_layer_dimensions)), dense_layer_dimensions
         ):
-            node_encoder.append(
-                dense_block(
-                    dense_layer_dimension,
-                    name="node_ide" + str(dense_layer_number + 1),
-                    **kwargs
-                )
-            )
-            edge_encoder.append(
-                dense_block(
-                    dense_layer_dimension,
-                    name="edge_ide" + str(dense_layer_number + 1),
-                    **kwargs
-                )
-            )
-        self.node_encoder = tf.keras.Sequential(node_encoder)
-        self.edge_encoder = tf.keras.Sequential(edge_encoder)
+            node_layer = dense_block(
+                dense_layer_dimension,
+                name="node_ide" + str(dense_layer_number + 1),
+                **kwargs
+            )(node_layer)
 
-        # Message passing graph neural network as base layer
-        self.graph_layers = []
+            edge_layer = dense_block(
+                dense_layer_dimension,
+                name="edge_ide" + str(dense_layer_number + 1),
+                **kwargs
+            )(edge_layer)
+
+        layer = (node_layer, edge_layer, edges, edge_weights)
+
         for base_layer_number, base_layer_dimension in zip(
             range(len(base_layer_dimensions)), base_layer_dimensions
         ):
-            self.graph_layers.append(
-                graph_block(
-                    base_layer_dimension,
-                    name="graph_block_" + str(base_layer_number),
-                )
-            )
+            layer = graph_block(
+                base_layer_dimension,
+                name="graph_block_" + str(base_layer_number),
+            )(layer)
 
-        # Create seperate graph decoder for node and edge features
-        node_decoder, edge_decoder = [], []
+        node_layer, edge_layer, *_ = layer
+
         for dense_layer_number, dense_layer_dimension in zip(
             range(len(dense_layer_dimensions)),
             reversed(dense_layer_dimensions),
         ):
-            if dense_layer_number == 0:
-                node_decoder.append(
-                    dense_block(
-                        dense_layer_dimension,
-                        input_shape=(None, base_layer_dimensions[-1]),
-                        name="node_idd" + str(dense_layer_number + 1),
-                        **kwargs
-                    )
-                )
-                edge_decoder.append(
-                    dense_block(
-                        dense_layer_dimension,
-                        input_shape=(None, base_layer_dimensions[-1]),
-                        name="edge_idd" + str(dense_layer_number + 1),
-                        **kwargs
-                    )
-                )
-            else:
-                node_decoder.append(
-                    dense_block(
-                        dense_layer_dimension,
-                        name="node_idd" + str(dense_layer_number + 1),
-                        **kwargs
-                    )
-                )
-                edge_decoder.append(
-                    dense_block(
-                        dense_layer_dimension,
-                        name="edge_idd" + str(dense_layer_number + 1),
-                        **kwargs
-                    )
-                )
-        self.node_decoder = tf.keras.Sequential(node_decoder)
-        self.edge_decoder = tf.keras.Sequential(edge_decoder)
+            node_layer = dense_block(
+                dense_layer_dimension,
+                name="node_idd" + str(dense_layer_number + 1),
+                **kwargs
+            )(node_layer)
+
+            edge_layer = dense_block(
+                dense_layer_dimension,
+                name="edge_idd" + str(dense_layer_number + 1),
+                **kwargs
+            )(edge_layer)
 
         # Output layers
-        self.nodes_output_layer = layers.Dense(
+        node_output = layers.Dense(
             number_of_outputs, activation=output_activation
-        )
-        self.edges_output_layer = layers.Dense(
+        )(node_layer)
+
+        edge_output = layers.Dense(
             number_of_outputs, activation=output_activation
+        )(edge_layer)
+
+        model = tf.keras.models.Model(
+            [node_features, edge_features, edges, edge_weights],
+            [node_output, edge_output],
         )
 
-    # def train_step(self, data):
-    #     batch, labels = data
-
-    #     with tf.GradientTape() as tape:
-    #         pred = self(batch, training=True)
-
-    #         # Compute loss
-    #         loss = self.compiled_loss(
-    #             labels,
-    #             pred,
-    #         )
-
-    #         # Compute gradients
-    #         trainable_vars = self.trainable_variables
-    #         grads = tape.gradient(loss, trainable_vars)
-    #         # Update weights
-    #         self.optimizer.apply_gradients(zip(grads, trainable_vars))
-
-    #         loss = {"loss": loss}
-
-    #         return loss
-
-    def call(self, inputs):
-        """
-        Forward pass of the graph neural network.
-        Parameters:
-        -----------
-        inputs: List of tensors
-            Node features, edge features and graph adjacency matrix.
-        Returns:
-        --------
-        List of tensors
-            Node and edge features.
-        """
-
-        nodes, edge_features, edges, edge_weights = inputs
-
-        print(nodes.shape)
-
-        # Encode node and edge features
-        encoded_nodes = self.node_encoder(nodes)
-        encoded_edge_features = self.edge_encoder(edge_features)
-
-        # Add new axis to the node features, edge features
-        # and graph adjacency matrix before passing to the
-        # graph neural network
-        layer = [
-            encoded_nodes,
-            encoded_edge_features,
-            edges,
-            edge_weights if not (edge_weights is None) else None,
-        ]
-
-        # Apply graph neural network
-        for graph_layer in self.graph_layers:
-            layer = graph_layer(layer)
-
-        # Squeeze the output of the graph neural network
-        nodes_latent, edge_features_latent, *_ = map(
-            lambda x: tf.squeeze(x) if not (x is None) else None, layer
-        )
-
-        # Decode node and edge features
-        decoded_nodes = self.node_decoder(nodes_latent)
-        decoded_edges = self.node_decoder(edge_features_latent)
-
-        # Return the output of the graph neural network
-        outputs = (
-            self.nodes_output_layer(decoded_nodes),
-            self.edges_output_layer(decoded_edges),
-        )
-        return outputs
+        super().__init__(model, loss=loss, **kwargs)
