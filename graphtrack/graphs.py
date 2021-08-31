@@ -9,18 +9,18 @@ import more_itertools as mit
 from operator import is_not
 from functools import partial
 
-_default_properties = (
-    "area",
-    "mean_intensity",
-    "perimeter",
-    "eccentricity",
-    "solidity",
-)
+_default_properties = {
+    "area": 20000,
+    "mean_intensity": 127.5,
+    "perimeter": 800,
+    "eccentricity": 1,
+    "solidity": 1,
+}
 
 
 def NodeExtractor(
     sequence: dt.Feature = None,
-    properties: tuple = _default_properties,
+    properties: dict = _default_properties,
     crop_size: int = 100,
     resize_shape: tuple = (96, 96),
     **kwargs
@@ -32,9 +32,11 @@ def NodeExtractor(
     sequence: dt.Feature
         A sequence of frames. Cell images and
         their corresponding masks.
-    properties: tuple
-        Properties to be extracted from the
-        cell images and masks.
+    properties: dict
+        A dictionary containing the properties
+        of the nodes to be extracted from the
+        cell images and masks. A normalization
+        factor is also defined for each property.
     crop_size: int
         Size of the cropped cell images.
     resize_shape: tuple, optional
@@ -62,8 +64,12 @@ def NodeExtractor(
     images, masks = np.array(images), np.array(masks)
 
     # Properties to be extracted from the cell images and masks.
+    # A normalization factor is also defined for each property.
     # By default label and centroid are extracted
-    properties = ("label", "centroid") + properties
+    properties.update({"label": 1, "centroid": np.shape(images[..., 0])})
+
+    # Extract the names of the properties
+    properties_names = list(properties.keys())
 
     nodes, crops = [], []
 
@@ -73,11 +79,21 @@ def NodeExtractor(
     for frame_idx, (image, mask) in enumerate(zip(*iterator)):
         # Compute image properties and return them as a pandas-compatible table
         props = skimage.measure.regionprops_table(
-            mask.astype(int), intensity_image=image, properties=properties
+            mask.astype(int),
+            intensity_image=image,
+            properties=properties_names,
         )
 
         # Create dataframe with the properties
         df = pd.DataFrame(props)
+
+        # normalize the properties
+        for prop in properties_names:
+            df_filtered = df.filter(like=prop) / properties[prop]
+            df.loc[:, df_filtered.columns] = df_filtered
+
+        # Cast label to int
+        df["label"] = df["label"].astype(int)
 
         # Extract centroids from the dataframe to crop the cell images
         centroids = df.filter(like="centroid").values.astype(np.int)
@@ -129,7 +145,7 @@ def NodeExtractor(
         AppendSolution(nodes.reset_index(drop=True), GetSolution),
         parenthood,
         crops,
-        properties,
+        properties_names,
     )
 
 
