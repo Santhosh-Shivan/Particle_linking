@@ -318,7 +318,7 @@ class ContinuousGraphGenerator(dt.generators.ContinuousGenerator):
             list(map(lambda _batch: np.shape(_batch[0])[0], batch))
         )
 
-        inputs, outputs, nofedges = [[], [], []], [[], []], []
+        inputs, outputs, nofedges = [[], [], [], []], [[], []], []
 
         for i in range(len(batch)):
             # Clip node features to the minimum number of nodes
@@ -335,9 +335,11 @@ class ContinuousGraphGenerator(dt.generators.ContinuousGenerator):
             # of the last node
             edgef = batch[i][1][:last_node_idx, :]
             adjmx = batch[i][2][:last_node_idx, :]
+            wghts = batch[i][3][:last_node_idx, :]
 
             inputs[1].append(edgef)
             inputs[2].append(adjmx)
+            inputs[3].append(wghts)
 
             # Appends the number of edges in the batch
             nofedges.append(np.shape(edgef)[0])
@@ -353,16 +355,16 @@ class ContinuousGraphGenerator(dt.generators.ContinuousGenerator):
 
         # Edge augmentation
         inputs[1], weights, idxs = graphs.SelfDuplicateEdgeAugmentation(
-            inputs[1], maxnofedges=maxnOfedges
+            inputs[1], inputs[3], maxnofedges=maxnOfedges
         )
         inputs[2], *_ = graphs.SelfDuplicateEdgeAugmentation(
-            inputs[2], maxnofedges=maxnOfedges, idxs=idxs
+            inputs[2], inputs[3], maxnofedges=maxnOfedges, idxs=idxs
         )
-        inputs.append(weights)
 
         outputs[1], *_ = graphs.SelfDuplicateEdgeAugmentation(
-            outputs[1], maxnofedges=maxnOfedges, idxs=idxs
+            outputs[1], inputs[3], maxnofedges=maxnOfedges, idxs=idxs
         )
+        inputs[3] = weights
 
         # Converts to numpy arrays
         inputs = tuple(map(np.array, inputs))
@@ -419,15 +421,7 @@ def GetValidationSet(size=None, **kwargs):
     loader = conf["feature"]
 
     # Lists of graphs and solutions
-    graphs = [
-        [],
-        [],
-        [],
-        [
-            None,
-        ]
-        * size,
-    ]
+    graphs = [[], [], [], []]
     solutions = [[], []]
 
     for _ in range(size):

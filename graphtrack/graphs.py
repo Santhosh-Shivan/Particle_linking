@@ -370,13 +370,22 @@ def GraphExtractor(sequence: dt.Feature = None, **kwargs):
         edgesdf, props=("feature",), **kwargs
     )
 
+    # Computes weight matrix from the adjacency matrix
+    nofedges = np.shape(sparseadjmtx)[0]
+    edgeweights = np.ones(nofedges)
+
+    # Add indexes to the weight matrix
+    edgeweights = np.stack(
+        (np.arange(0, edgeweights.shape[0]), edgeweights), axis=1
+    )
+
     return (
-        (nodefeatures, edgefeatures, sparseadjmtx),
+        (nodefeatures, edgefeatures, sparseadjmtx, edgeweights),
         (nfsolution, efsolution),
     )
 
 
-def SelfDuplicateEdgeAugmentation(edges, maxnofedges=None, idxs=None):
+def SelfDuplicateEdgeAugmentation(edges, w, maxnofedges=None, idxs=None):
     """
     Augments edges by randomly adding edges to the graph. The new edges
     are copies of the original edges, and their influence to the solution
@@ -397,8 +406,9 @@ def SelfDuplicateEdgeAugmentation(edges, maxnofedges=None, idxs=None):
     idxs = idxs if use_idxs else []
 
     def inner(items):
-        itr, edge = items
+        itr, (edge, w) = items
         edge = np.array(edge)
+        w = np.array(w)
 
         # Computes the number of additional edges to add
         nofedges = np.shape(edge)[0]
@@ -411,12 +421,6 @@ def SelfDuplicateEdgeAugmentation(edges, maxnofedges=None, idxs=None):
             idx = np.random.choice(nofedges, offset, replace=False)
             idxs.append(idx)
 
-        # Initiliazes the weights to 1
-        w = np.ones(nofedges)
-
-        # Add indexes to the weight matrix
-        w = np.stack((np.arange(0, w.shape[0]), w), axis=1)
-
         # Balances repeated edges
         w[idx, 1] = 0.5
 
@@ -428,4 +432,4 @@ def SelfDuplicateEdgeAugmentation(edges, maxnofedges=None, idxs=None):
         edge = np.concatenate((edge, edge[idx, :]), axis=0)
         return edge
 
-    return list(map(inner, enumerate(edges))), weights, idxs
+    return list(map(inner, enumerate(zip(edges, w)))), weights, idxs
