@@ -35,8 +35,8 @@ class GraphAccuracy(tf.keras.metrics.Accuracy):
             are of shape (batch_size, num_nodes,
             num_classes).
         """
-        y_true = tf.argmax(y_true[self.idx], axis=-1)
-        y_pred = tf.argmax(y_pred[self.idx], axis=-1)
+        y_true = tf.argmax(y_true[self.index], axis=-1)
+        y_pred = tf.argmax(y_pred[self.index], axis=-1)
 
         # Update metric
         return super(GraphAccuracy, self).update_state(y_true, y_pred)
