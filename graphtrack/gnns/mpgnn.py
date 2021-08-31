@@ -106,11 +106,15 @@ class mpGraphNet(KerasModel):
 
         # Output layers
         node_output = layers.Dense(
-            number_of_outputs, activation=output_activation
+            number_of_outputs,
+            activation=output_activation,
+            name="node_prediction",
         )(node_layer)
 
         edge_output = layers.Dense(
-            number_of_outputs, activation=output_activation
+            number_of_outputs,
+            activation=output_activation,
+            name="edge_prediction",
         )(edge_layer)
 
         model = tf.keras.models.Model(
