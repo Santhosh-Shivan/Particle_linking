@@ -328,7 +328,7 @@ class ContinuousGraphGenerator(dt.generators.ContinuousGenerator):
 
             # Extracts index of the last node in the adjacency matrix
             last_node_idx = int(
-                np.where(batch[i][2][:, 1] == cropNodesTo - 1)[0][0] + 1
+                np.where(batch[i][2][:, 1] <= cropNodesTo - 1)[0][-1] + 1
             )
 
             # Clips edge features and adjacency matrix to the index
