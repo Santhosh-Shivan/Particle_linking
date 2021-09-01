@@ -6,8 +6,6 @@ from .layers import as_block
 
 from .layers import GraphLayer as graphblock
 
-from ..losses import GraphCategoricalCrossEntropy
-
 
 class mpGraphNet(KerasModel):
     """
@@ -24,6 +22,11 @@ class mpGraphNet(KerasModel):
         Activation function for the output layer.
     dense_block: str
         Name of the dense block.
+    output_type: str
+        Type of output. Either "nodes", "edges", or "graph".
+        If 'key' is not a supported output type, then the
+        model output will be the concatenation of the node
+        and edge predictions.
     graph_block: str
         Name of the graph block.
     kwargs: dict
@@ -43,7 +46,11 @@ class mpGraphNet(KerasModel):
         number_of_outputs=3,
         output_activation=None,
         dense_block="graphdense",
-        loss=GraphCategoricalCrossEntropy,
+        output_type="graph",
+        loss=[
+            tf.keras.losses.CategoricalCrossentropy(from_logits=True),
+        ]
+        * 2,
         **kwargs
     ):
 
@@ -117,9 +124,19 @@ class mpGraphNet(KerasModel):
             name="edge_prediction",
         )(edge_layer)
 
+        output_dict = {
+            "nodes": node_output,
+            "edges": edge_output,
+            "graph": [node_output, edge_output],
+        }
+        try:
+            outputs = output_dict[output_type]
+        except KeyError:
+            outputs = output_dict["graph"]
+
         model = tf.keras.models.Model(
             [node_features, edge_features, edges, edge_weights],
-            [node_output, edge_output],
+            outputs,
         )
 
         super().__init__(model, loss=loss, **kwargs)
