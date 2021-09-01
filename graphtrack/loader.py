@@ -308,7 +308,18 @@ class ContinuousGraphGenerator(dt.generators.ContinuousGenerator):
         Set of options to pass to the feature when resolving
     ndim : int
         Number of dimensions of each batch (including the batch dimension).
+    output_type : str
+        Type of output. Either "nodes", "edges", or "graph". If 'key' is not a
+        supported output type, then the output will be the concatenation of the
+        node and edge labels.
     """
+
+    def __init__(self, feature, *args, output_type="graph", **kwargs):
+        self.output_type = output_type
+
+        dt.utils.safe_call(
+            super().__init__, positional_args=[feature, *args], **kwargs
+        )
 
     def __getitem__(self, idx):
         batch, labels = super().__getitem__(idx)
@@ -370,6 +381,16 @@ class ContinuousGraphGenerator(dt.generators.ContinuousGenerator):
         inputs = tuple(map(np.array, inputs))
         outputs = tuple(map(np.array, outputs))
 
+        output_dict = {
+            "nodes": outputs[0],
+            "edges": outputs[1],
+            "graph": outputs,
+        }
+        try:
+            outputs = output_dict[self.output_type]
+        except KeyError:
+            outputs = output_dict["graph"]
+
         return inputs, outputs
 
 
@@ -396,7 +417,7 @@ def GraphGenerator(min_data_size=1000, max_data_size=2000, **kwargs):
     kwargs.pop("augmentation", None)
 
     args = {
-        "feature": feature,
+        # "feature": feature,
         "batch_function": lambda graph: graph[0],
         "label_function": lambda graph: graph[1],
         "min_data_size": min_data_size,
@@ -404,7 +425,7 @@ def GraphGenerator(min_data_size=1000, max_data_size=2000, **kwargs):
         **kwargs,
     }
 
-    return dt.utils.safe_call(ContinuousGraphGenerator, **args)
+    return ContinuousGraphGenerator(feature, **args)
 
 
 def GetValidationSet(size=None, **kwargs):
