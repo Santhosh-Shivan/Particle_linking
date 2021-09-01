@@ -16,26 +16,14 @@ pad_image_to_fft(image: Image, axes = (0, 1))
     Transforms.
 """
 
-import warnings
-import cupy
 import numpy as np
-import numpy.lib.mixins
 import operator as ops
 from tensorflow import Tensor
 import tensorflow
 from .backend.tensorflow_bindings import TENSORFLOW_BINDINGS
+import numpy as np
 
-
-CUPY_INSTALLED = False
-try:
-    import cupy as cp
-
-    CUPY_INSTALLED = True
-except Exception:
-    CUPY_INSTALLED = False
-    warnings.warn(
-        "cupy not installed. GPU-accelerated simulations will not be possible"
-    )
+from .backend._config import cupy
 
 
 def _binary_method(op):
@@ -48,9 +36,7 @@ def _binary_method(op):
                 op(self._value, other._value), copy=False
             ).merge_properties_from([self, other])
         else:
-            return Image(
-                op(self._value, other), copy=False
-            ).merge_properties_from(self)
+            return Image(op(self._value, other), copy=False).merge_properties_from(self)
 
     func.__name__ = "__{}__".format(op.__name__)
     return func
@@ -66,9 +52,7 @@ def _reflected_binary_method(op):
                 op(other._value, self._value), copy=False
             ).merge_properties_from([other, self])
         else:
-            return Image(
-                op(other, self._value), copy=False
-            ).merge_properties_from(self)
+            return Image(op(other, self._value), copy=False).merge_properties_from(self)
 
     func.__name__ = "__r{}__".format(op.__name__)
     return func
@@ -179,9 +163,7 @@ class Image:
                     return prop[key]
             return default
         else:
-            return [
-                prop[key] for prop in self.properties if key in prop
-            ] or default
+            return [prop[key] for prop in self.properties if key in prop] or default
 
     def merge_properties_from(self, other: "Image") -> "Image":
         """Merge properties with those from another Image.
@@ -227,7 +209,7 @@ class Image:
     def _view(self, value):
         if isinstance(value, Image):
             return self._view(value._value)
-        if isinstance(value, (np.ndarray, list, int, float, bool)):
+        if isinstance(value, (np.ndarray, list)):
             return np.array(value)
         if isinstance(value, Tensor):
             return value
@@ -248,9 +230,7 @@ class Image:
         out = kwargs.get("out", ())
 
         if out:
-            kwargs["out"] = tuple(
-                x._value if isinstance(x, Image) else x for x in out
-            )
+            kwargs["out"] = tuple(x._value if isinstance(x, Image) else x for x in out)
 
         results = getattr(ufunc, method)(*args, **kwargs)
 
@@ -325,22 +305,19 @@ class Image:
     def to_cupy(self):
 
         if isinstance(self._value, np.ndarray):
-            return Image(
-                cupy.array(self._value), copy=False
-            ).merge_properties_from(self)
+            return Image(cupy.array(self._value), copy=False).merge_properties_from(
+                self
+            )
 
         return self
 
     def to_numpy(self):
-
+        if isinstance(self._value, np.ndarray):
+            return self
         if isinstance(self._value, cupy.ndarray):
-            return Image(self._value.get(), copy=False).merge_properties_from(
-                self
-            )
+            return Image(self._value.get(), copy=False).merge_properties_from(self)
         if isinstance(self._value, tensorflow.Tensor):
-            return Image(
-                self._value.numpy(), copy=False
-            ).merge_properties_from(self)
+            return Image(self._value.numpy(), copy=False).merge_properties_from(self)
 
         return self
 
@@ -349,7 +326,10 @@ class Image:
 
     def __getitem__(self, idx):
         idx = strip(idx)
-        out = Image(self._value.__getitem__(idx), copy=False)
+        if isinstance(idx, int):
+            return self._value[idx]
+
+        out = Image(self._value[idx], copy=True)
         out.merge_properties_from([self, idx])
         return out
 
@@ -379,9 +359,7 @@ class Image:
         return len(self._value)
 
     def __repr__(self):
-        return repr(
-            self._value
-        )  # + "\nWith properties:" + repr(self.properties)
+        return repr(self._value) + f"\nWith {len(self.properties)} properties"
 
     __lt__ = _binary_method(ops.lt)
     __le__ = _binary_method(ops.le)
@@ -425,10 +403,6 @@ def strip(v):
         return type(v)([strip(i) for i in v])
 
     return v
-
-
-def array(v):
-    return np.array(strip(v))
 
 
 def coerce(images):
@@ -482,6 +456,6 @@ def maybe_cupy(array):
     from . import config
 
     if config.gpu_enabled:
-        return cp.array(array)
+        return cupy.array(array)
 
     return array

@@ -120,18 +120,14 @@ class Feature(DeepTrackNode):
         self._input.add_child(self)
 
         # Bind seed
-        self._random_seed = DeepTrackNode(
-            lambda: np.random.randint(2147483648)
-        )
+        self._random_seed = DeepTrackNode(lambda: np.random.randint(2147483648))
         self.add_dependency(self._random_seed)
         self._random_seed.add_child(self)
 
         # Initilaize arguments
         self.arguments = None
 
-    def get(
-        self, image: Image or List[Image], **kwargs
-    ) -> Image or List[Image]:
+    def get(self, image: Image or List[Image], **kwargs) -> Image or List[Image]:
         """Method for altering an image
         Abstract method that define how the feature transforms the input. The current
         value of all properties will be passed as keyword arguments.
@@ -216,6 +212,9 @@ class Feature(DeepTrackNode):
 
         for index, image in enumerate(new_list):
 
+            if self.arguments:
+                image.append(self.arguments.properties())
+
             image.append(feature_input)
 
         # Merge input and new_list
@@ -231,10 +230,7 @@ class Feature(DeepTrackNode):
             return image_list
 
     def __call__(
-        self,
-        image_list: Image or List[Image] = None,
-        replicate_index=None,
-        **kwargs
+        self, image_list: Image or List[Image] = None, replicate_index=None, **kwargs
     ):
         # Potentially fragile. Maybe a special variable dt._last_input instead?
         if image_list is not None and not (
@@ -308,7 +304,7 @@ class Feature(DeepTrackNode):
             return [
                 i.to_cupy()
                 if (not self.__distributed__) and self.__use_gpu__(i, **kwargs)
-                else i
+                else i.to_numpy()
                 for i in inputs
             ]
 
@@ -367,9 +363,7 @@ class Feature(DeepTrackNode):
                 images.append([plt.imshow(image[:, :, 0], **kwargs)])
 
             interval = (
-                interval
-                or output_image[0].get_property("interval")
-                or (1 / 30 * 1000)
+                interval or output_image[0].get_property("interval") or (1 / 30 * 1000)
             )
 
             anim = animation.ArtistAnimation(
@@ -926,11 +920,7 @@ class Probability(StructuralFeature):
     """
 
     def __init__(
-        self,
-        feature: Feature,
-        probability: PropertyLike[float],
-        *args,
-        **kwargs
+        self, feature: Feature, probability: PropertyLike[float], *args, **kwargs
     ):
         super().__init__(
             *args,
@@ -1038,9 +1028,7 @@ class Slice(Feature):
     def __init__(
         self,
         slices: PropertyLike[
-            Iterable[
-                PropertyLike[int] or PropertyLike[slice] or PropertyLike[...]
-            ]
+            Iterable[PropertyLike[int] or PropertyLike[slice] or PropertyLike[...]]
         ],
         **kwargs
     ):
@@ -1137,9 +1125,7 @@ class ConditionalSetProperty(StructuralFeature):
 
     __distributed__ = False
 
-    def __init__(
-        self, feature: Feature, condition=PropertyLike[str or bool], **kwargs
-    ):
+    def __init__(self, feature: Feature, condition=PropertyLike[str or bool], **kwargs):
 
         super().__init__(condition=condition, **kwargs)
         self.feature = self.add_feature(feature)
@@ -1230,9 +1216,7 @@ class Lambda(Feature):
         Function that takes the current image as first input
     """
 
-    def __init__(
-        self, function: Callable[..., Callable[[Image], Image]], **kwargs
-    ):
+    def __init__(self, function: Callable[..., Callable[[Image], Image]], **kwargs):
         super().__init__(function=function, **kwargs)
 
     def get(self, image, function, **kwargs):
@@ -1266,6 +1250,69 @@ class Merge(Feature):
         return function(list_of_images)
 
 
+class OneOf(Feature):
+    """Resolves one feature from a collection on the input.
+
+    Valid collections are any object that can be iterated (such as lists, tuples and sets).
+    Internally, the collection is converted to a tuple.
+
+    Default behaviour is to sample the collection uniformly random. This can be
+    controlled by the `key` argument, where the feature resolved is chosen as
+    `tuple(collection)[key]`.
+    """
+
+    __distributed__ = False
+
+    def __init__(self, collection, key=None, **kwargs):
+        self.collection = tuple(collection)
+        super().__init__(key=key, **kwargs)
+
+        for feature in self.collection:
+            self.add_feature(feature)
+
+    def _process_properties(self, propertydict) -> dict:
+        super()._process_properties(propertydict)
+
+        if propertydict["key"] is None:
+            propertydict["key"] = np.random.randint(len(self.collection))
+
+        return propertydict
+
+    def get(self, image, key, **kwargs):
+        return self.collection[key](image)
+
+
+class OneOfDict(Feature):
+    """Resolves one feature from a dictionary.
+
+    Default behaviour is to sample the values diction uniformly random. This can be
+    controlled by the `key` argument, where the feature resolved is chosen as
+    `collection[key]`.
+    """
+
+    __distributed__ = False
+
+    def __init__(self, collection, key=None, **kwargs):
+
+        self.collection = collection
+
+        super().__init__(key=key, **kwargs)
+
+        for feature in self.collection.values():
+            self.add_feature(feature)
+
+    def _process_properties(self, propertydict) -> dict:
+        super()._process_properties(propertydict)
+
+        if propertydict["key"] is None:
+            propertydict["key"] = np.random.choice(list(self.collection.keys()))
+
+        return propertydict
+
+    def get(self, image, key, **kwargs):
+        return self.collection[key](image)
+
+
 class Dataset(Feature):
     """Grabs data from a local set of data.
 
@@ -1285,9 +1332,7 @@ class Dataset(Feature):
     __distributed__ = False
 
     def __init__(
-        self,
-        data: Iterator or PropertyLike[float or ArrayLike[float]],
-        **kwargs
+        self, data: Iterator or PropertyLike[float or ArrayLike[float]], **kwargs
     ):
         super().__init__(data=data, **kwargs)
 
@@ -1414,9 +1459,7 @@ class LoadImage(Feature):
                 try:
                     import PIL.Image
 
-                    image = [
-                        PIL.Image.open(file, **load_options) for file in path
-                    ]
+                    image = [PIL.Image.open(file, **load_options) for file in path]
                 except (IOError, ImportError):
                     import cv2
 
@@ -1537,9 +1580,7 @@ class SampleToMasks(Feature):
             for position in positions:
                 p0 = np.round(position - output_region[0:2])
 
-                if np.any(p0 > output.shape[0:2]) or np.any(
-                    p0 + label.shape[0:2] < 0
-                ):
+                if np.any(p0 > output.shape[0:2]) or np.any(p0 + label.shape[0:2] < 0):
                     continue
 
                 crop_x = int(-np.min([p0[0], 0]))
@@ -1582,9 +1623,7 @@ class SampleToMasks(Feature):
                     elif merge == "overwrite":
                         output_slice[
                             labelarg[..., label_index] != 0, label_index
-                        ] = labelarg[
-                            labelarg[..., label_index] != 0, label_index
-                        ]
+                        ] = labelarg[labelarg[..., label_index] != 0, label_index]
                         output[
                             p0[0] : p0[0] + labelarg.shape[0],
                             p0[1] : p0[1] + labelarg.shape[1],

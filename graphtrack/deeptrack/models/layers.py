@@ -1,13 +1,10 @@
-#%%
 """ Standardized layers implemented in keras.
 """
 
 
 from warnings import WarningMessage
 from tensorflow.keras import layers
-import tensorflow as tf
-from tensorflow.python.keras.layers import normalization
-from tensorflow.python.ops.nn_impl import normalize
+
 
 try:
     from tensorflow_addons.layers import InstanceNormalization
@@ -52,9 +49,7 @@ def as_block(x):
                 + ", ".join(BLOCKS.keys())
             )
     if isinstance(x, layers.Layer) or not callable(x):
-        raise TypeError(
-            "Layer block should be a function that returns a keras Layer."
-        )
+        raise TypeError("Layer block should be a function that returns a keras Layer.")
     else:
         return x
 
@@ -137,7 +132,7 @@ def ConvolutionalBlock(
 
 
 @register("dense")
-def DenseBlock(activation="relu", instance_norm=False, **kwargs):
+def DenseBlock(activation="tanh", instance_norm=False, **kwargs):
     """A single dense layer.
 
     Accepts arguments of keras.layers.Dense.
@@ -194,10 +189,7 @@ def PoolingBlock(
     def Layer(filters=None, **kwargs_inner):
         kwargs_inner.update(kwargs)
         layer = layers.MaxPool2D(
-            pool_size=pool_size,
-            padding=padding,
-            strides=strides,
-            **kwargs_inner,
+            pool_size=pool_size, padding=padding, strides=strides, **kwargs_inner
         )
         return lambda x: _single_layer_call(
             x, layer, _instance_norm(instance_norm, filters), activation
@@ -309,11 +301,7 @@ def StaticUpsampleBlock(
 
 @register("residual")
 def ResidualBlock(
-    kernel_size=(3, 3),
-    activation="relu",
-    strides=1,
-    instance_norm=True,
-    **kwargs,
+    kernel_size=(3, 3), activation="relu", strides=1, instance_norm=True, **kwargs
 ):
     """A 2d residual layer with two convolutional steps.
 

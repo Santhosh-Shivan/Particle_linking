@@ -53,8 +53,7 @@ class Property(DeepTrackNode):
 
         if isinstance(sampling_rule, list):
             list_of_actions = [
-                self.create_action(val, **dependencies)
-                for val in sampling_rule
+                self.create_action(val, **dependencies) for val in sampling_rule
             ]
 
             return lambda replicate_index=None: [
@@ -101,9 +100,7 @@ class Property(DeepTrackNode):
             knames = get_kwarg_names(sampling_rule)
 
             used_dependencies = dict(
-                (key, dep)
-                for key, dep in dependencies.items()
-                if key in knames
+                (key, dep) for key, dep in dependencies.items() if key in knames
             )
 
             for dep in used_dependencies.values():
@@ -141,17 +138,14 @@ class PropertyDict(DeepTrackNode, dict):
 
             for key, val in list(kwargs.items()):
                 try:
-                    dependencies[key] = Property(
-                        val, **{**dependencies, **kwargs}
-                    )
+                    dependencies[key] = Property(val, **{**dependencies, **kwargs})
                     kwargs.pop(key)
                 except AttributeError:
                     pass
 
         def action(replicate_index=None):
             return dict(
-                (key, val(replicate_index=replicate_index))
-                for key, val in self.items()
+                (key, val(replicate_index=replicate_index)) for key, val in self.items()
             )
 
         super().__init__(action, **dependencies)
@@ -247,9 +241,7 @@ class SequentialProperty(Property):
         if not current_data:
             super().store([value], replicate_index=replicate_index)
         else:
-            super().store(
-                current_data + [value], replicate_index=replicate_index
-            )
+            super().store(current_data + [value], replicate_index=replicate_index)
 
     def current_value(self, replicate_index):
         return super().current_value(replicate_index=replicate_index)[
@@ -304,9 +296,7 @@ class SequentialProperty(Property):
                 previous_values=new_current_value,
             )
             if step == 0:
-                kwargs.update(
-                    previous_value=self.sample(self.initializer, **kwargs)
-                )
+                kwargs.update(previous_value=self.sample(self.initializer, **kwargs))
             else:
                 kwargs.update(previous_value=new_current_value[-1])
 

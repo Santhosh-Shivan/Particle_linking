@@ -34,8 +34,7 @@ class GAN(tf.keras.Model):
     def train_step(self, real_images):
         # Sample random points in the latent space
         batch_size = tf.shape(real_images)[0]
-        random_latent_vectors = tf.random.normal(
-            shape=(batch_size, self.latent_dim))
+        random_latent_vectors = tf.random.normal(shape=(batch_size, self.latent_dim))
 
         # Decode them to fake images
         generated_images = self.generator(random_latent_vectors)
@@ -60,8 +59,7 @@ class GAN(tf.keras.Model):
         )
 
         # Sample random points in the latent space
-        random_latent_vectors = tf.random.normal(
-            shape=(batch_size, self.latent_dim))
+        random_latent_vectors = tf.random.normal(shape=(batch_size, self.latent_dim))
 
         # Assemble labels that say "all real images"
         misleading_labels = tf.zeros((batch_size, 1))
@@ -69,12 +67,10 @@ class GAN(tf.keras.Model):
         # Train the generator (note that we should *not* update the weights
         # of the discriminator)!
         with tf.GradientTape() as tape:
-            predictions = self.discriminator(
-                self.generator(random_latent_vectors))
+            predictions = self.discriminator(self.generator(random_latent_vectors))
             g_loss = self.loss_fn(misleading_labels, predictions)
         grads = tape.gradient(g_loss, self.generator.trainable_weights)
-        self.g_optimizer.apply_gradients(
-            zip(grads, self.generator.trainable_weights))
+        self.g_optimizer.apply_gradients(zip(grads, self.generator.trainable_weights))
 
         # Update metrics
         self.d_loss_metric.update_state(d_loss)
@@ -90,17 +86,13 @@ class GAN(tf.keras.Model):
                 tf.keras.Input(shape=(latent_dim,)),
                 layers.Dense(8 * 8 * 128),
                 layers.Reshape((8, 8, 128)),
-                layers.Conv2DTranspose(
-                    128, kernel_size=4, strides=2, padding="same"),
+                layers.Conv2DTranspose(128, kernel_size=4, strides=2, padding="same"),
                 layers.LeakyReLU(alpha=0.2),
-                layers.Conv2DTranspose(
-                    256, kernel_size=4, strides=2, padding="same"),
+                layers.Conv2DTranspose(256, kernel_size=4, strides=2, padding="same"),
                 layers.LeakyReLU(alpha=0.2),
-                layers.Conv2DTranspose(
-                    512, kernel_size=4, strides=2, padding="same"),
+                layers.Conv2DTranspose(512, kernel_size=4, strides=2, padding="same"),
                 layers.LeakyReLU(alpha=0.2),
-                layers.Conv2D(3, kernel_size=5, padding="same",
-                              activation="sigmoid"),
+                layers.Conv2D(3, kernel_size=5, padding="same", activation="sigmoid"),
             ],
             name="generator",
         )
