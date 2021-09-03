@@ -142,7 +142,7 @@ def GetLoaders(
             )
             for _sequence in sequence
         ],
-        **root.properties
+        **root.properties,
     )
 
     ST_mask_loader = root >> dt.LoadImage(
@@ -155,7 +155,7 @@ def GetLoaders(
             )
             for _sequence in sequence
         ],
-        **root.properties
+        **root.properties,
     )
 
     GT_mask_loader = root >> dt.LoadImage(
@@ -168,7 +168,7 @@ def GetLoaders(
             )
             for _sequence in sequence
         ],
-        **root.properties
+        **root.properties,
     )
 
     mask_loader = (ST_mask_loader & GT_mask_loader) >> dt.Merge(
@@ -185,13 +185,19 @@ def GetLoaders(
         augmented_dataset = Combined
 
     return dt.ConditionalSetFeature(
-        on_true=augmented_dataset
+        on_false=augmented_dataset
         >> dt.Merge(
             lambda: lambda sequence: graphs.GraphExtractor(sequence, **kwargs),
         ),
-        on_false=augmented_dataset,
-        condition="return_graphs",
-        return_graphs=True,
+        on_true=augmented_dataset
+        >> dt.Merge(
+            lambda: lambda sequence: [
+                sequence,
+                graphs.GraphExtractor(sequence, **kwargs),
+            ],
+        ),
+        condition="return_sequence",
+        return_sequence=False,
     )
 
 
@@ -442,6 +448,7 @@ def GetValidationSet(size=None, **kwargs):
     loader = conf["feature"]
 
     # Lists of graphs and solutions
+    sequences = []
     graphs = [[], [], [], []]
     solutions = [[], []]
 
@@ -450,7 +457,12 @@ def GetValidationSet(size=None, **kwargs):
         loader.update()
 
         # Resolve the features
-        graph, solution = loader.resolve(validation=True)
+        sequence, (graph, solution) = loader.update().resolve(
+            validation=True, return_sequence=True
+        )
+
+        # Append sequence
+        sequences.append(sequence)
 
         # Append the graphs and solutions
         for i, (g, s) in enumerate(itertools.zip_longest(graph, solution)):
@@ -459,4 +471,4 @@ def GetValidationSet(size=None, **kwargs):
             if not (s is None):
                 solutions[i].append(np.array(s))
 
-    return graphs, solutions
+    return sequences, graphs, solutions
