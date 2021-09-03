@@ -66,10 +66,11 @@ def NodeExtractor(
     # Properties to be extracted from the cell images and masks.
     # A normalization factor is also defined for each property.
     # By default label and centroid are extracted
-    properties.update({"label": 1, "centroid": np.shape(images[..., 0])})
+    _properties = {"label": 1, "centroid": np.shape(images[..., 0])}
+    _properties.update(properties)
 
     # Extract the names of the properties
-    properties_names = list(properties.keys())
+    properties_names = list(_properties.keys())
 
     nodes, crops = [], []
 
@@ -89,7 +90,7 @@ def NodeExtractor(
 
         # normalize the properties
         for prop in properties_names:
-            df_filtered = df.filter(like=prop) / properties[prop]
+            df_filtered = df.filter(like=prop) / _properties[prop]
             df.loc[:, df_filtered.columns] = df_filtered
 
         # Cast label to int
@@ -139,10 +140,12 @@ def NodeExtractor(
     # the solution is [0, 1], otherwise it is [1, 0] representing
     # cells that did not divide.
     def GetSolution(x):
-        return tonehot(1, 2) if x.parent != 0 else tonehot(0, 2)
+        return (tonehot(1, 2) if x.parent != 0 else tonehot(0, 2),)
 
     return (
-        AppendSolution(nodes.reset_index(drop=True), GetSolution),
+        AppendSolution(
+            nodes.reset_index(drop=True), GetSolution, append_weight=False
+        ),
         parenthood,
         crops,
         properties_names,
@@ -156,6 +159,7 @@ def GetEdge(
     radius: int,
     scales: list,
     parenthood: pd.DataFrame,
+    rare_event_weight: float = 10,
     **kwargs
 ):
     """
@@ -215,7 +219,7 @@ def GetEdge(
 
         # Filter out edges with a feature-distance less than scale * radius
         combdf = combdf[combdf["feature-dist"] < scale * radius].filter(
-            regex=("label|index|feature")
+            regex=("frame|label|index|feature")
         )
         edges.append(combdf)
 
@@ -233,14 +237,17 @@ def GetEdge(
     # array or if label_x == label_y, the solution is [0, 1], otherwise
     # it is [1, 0] representing edges are not connected.
     def GetSolution(df):
-        if (np.any(np.all(df["label"][::-1] == parenthood, axis=1))) | (
-            df["label_x"] == df["label_y"]
-        ):
+        if np.any(np.all(df["label"][::-1] == parenthood, axis=1)):
             solution = tonehot(1, 2)
+            weight = rare_event_weight
+        elif df["label_x"] == df["label_y"]:
+            solution = tonehot(1, 2)
+            weight = 1
         else:
             solution = tonehot(0, 2)
+            weight = 1
 
-        return solution
+        return solution, weight
 
     return AppendSolution(edgedf, GetSolution)
 
@@ -288,7 +295,7 @@ def GetScale(nofframes):
     return [1] * nofframes
 
 
-def AppendSolution(df, func, **kwargs):
+def AppendSolution(df, func, append_weight=True, **kwargs):
     """
     Appends a solution to the dataframe
     Parameters
@@ -306,7 +313,13 @@ def AppendSolution(df, func, **kwargs):
         properties for the edges/nodes with
         a solution.
     """
-    df.loc[:, "solution"] = df.apply(func, axis=1, **kwargs)
+    # Get solution
+    df.loc[:, "solution"] = df.apply(lambda x: func(x)[0], axis=1, **kwargs)
+
+    if append_weight:
+        # Get weight
+        df.loc[:, "weight"] = df.apply(lambda x: func(x)[1], axis=1, **kwargs)
+
     return df
 
 
@@ -387,13 +400,32 @@ def GraphExtractor(sequence: dt.Feature = None, **kwargs):
     )
 
     # Computes weight matrix from the adjacency matrix
-    nofedges = np.shape(sparseadjmtx)[0]
-    edgeweights = np.ones(nofedges)
+    edgeweights = edgesdf["weight"].to_numpy()
 
     # Add indexes to the weight matrix
     edgeweights = np.stack(
         (np.arange(0, edgeweights.shape[0]), edgeweights), axis=1
     )
+
+    # If validation is enabled, the sparse adjacency matrix
+    # contains the frame index for each edge (mainly for
+    # visualization porposes)
+    validation = list(
+        map(
+            lambda prop: prop["validation"]
+            if "validation" in prop.keys()
+            else False,
+            sequence[0].properties,
+        )
+    )
+    if np.any(validation):
+        # Add frames to the adjacency matrix
+        frames = edgesdf.filter(like="frame").to_numpy()
+        sparseadjmtx = np.concatenate((frames, sparseadjmtx), axis=-1)
+
+        # Add frames to the node features matrix
+        frames = nodesdf.filter(like="frame").to_numpy()
+        nodefeatures = np.concatenate((frames, nodefeatures), axis=-1)
 
     return (
         (nodefeatures, edgefeatures, sparseadjmtx, edgeweights),
@@ -424,7 +456,7 @@ def SelfDuplicateEdgeAugmentation(edges, w, maxnofedges=None, idxs=None):
     def inner(items):
         itr, (edge, w) = items
         edge = np.array(edge)
-        w = np.array(w)
+        w = np.array(w, dtype=np.float64)
 
         # Computes the number of additional edges to add
         nofedges = np.shape(edge)[0]
@@ -434,11 +466,18 @@ def SelfDuplicateEdgeAugmentation(edges, w, maxnofedges=None, idxs=None):
         if use_idxs:
             idx = idxs[itr]
         else:
-            idx = np.random.choice(nofedges, offset, replace=False)
+            # privileges the edges denoting rare events
+            probability = np.ones(nofedges)
+            probability[w[:, 1] > 1] = 2
+            probability = probability / np.sum(probability)
+
+            idx = np.random.choice(
+                nofedges, offset, replace=False, p=list(probability)
+            )
             idxs.append(idx)
 
         # Balances repeated edges
-        w[idx, 1] = 0.5
+        w[idx, 1] /= 2
 
         # Augment the weights
         w = np.concatenate((w, w[idx]), axis=0)
