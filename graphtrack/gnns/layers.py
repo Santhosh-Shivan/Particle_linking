@@ -152,6 +152,13 @@ class MultiHeadSelfAttention(tf.keras.layers.Layer):
         self.value_dense = layers.Dense(filters)
         self.combine_dense = layers.Dense(filters)
 
+        self.att_weights = tf.Variable(
+            1.0,
+            name="attention_weights",
+            dtype=tf.float32,
+            shape=tf.TensorShape(None),
+        )
+
     def SingleAttention(self, query, key, value):
         """
         Single attention layer.
@@ -209,7 +216,8 @@ class MultiHeadSelfAttention(tf.keras.layers.Layer):
         key = self.separate_heads(key, batch_size)
         value = self.separate_heads(value, batch_size)
 
-        attention, _ = self.SingleAttention(query, key, value)
+        attention, att_weights = self.SingleAttention(query, key, value)
+        self.att_weights.assign(att_weights)
         attention = tf.transpose(attention, perm=[0, 2, 1, 3])
         concat_attention = tf.reshape(
             attention, (batch_size, -1, self.filters)
@@ -342,7 +350,8 @@ class GraphLayer(tf.keras.layers.Layer):
 
         return (
             updated_nodes,
-            messages,
+            weighted_messages,
+            # messages,
             edges,
             edge_weights,
         )
