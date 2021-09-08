@@ -72,7 +72,7 @@ def NodeExtractor(
     # Extract the names of the properties
     properties_names = list(_properties.keys())
 
-    nodes, crops = [], []
+    nodes = []
 
     # Roll the axis -1 backwards before the for loop
     iterator = map(lambda x: np.rollaxis(x, -1), (images, masks))
@@ -96,30 +96,12 @@ def NodeExtractor(
         # Cast label to int
         df["label"] = df["label"].astype(int)
 
-        # Extract centroids from the dataframe to crop the cell images
-        centroids = df.filter(like="centroid").values.astype(np.int)
-
         # Pad cell images with zeros before cropping
         image = np.pad(image, pad_width=crop_size, mode="constant")
-
-        for centroid in centroids.tolist():
-            # Crop cell images
-            crop = image[
-                centroid[0] : centroid[0] + 2 * crop_size,
-                centroid[1] : centroid[1] + 2 * crop_size,
-            ]
-
-            # Resize the cropped images
-            crop = skimage.transform.resize(
-                crop, resize_shape, anti_aliasing=True
-            )
-            crops.append(crop)
 
         # Add frame column to the dataframe
         df.insert(loc=0, column="frame", value=frame_idx)
         nodes.append(df)
-
-    crops = np.stack(crops, axis=-1)
 
     # Concatenate the dataframes in a single
     #  dataframe for the whole sequence
@@ -137,17 +119,16 @@ def NodeExtractor(
         ] = parent
 
     # Returns a solution for each node. If a node has a parent,
-    # the solution is [0, 1], otherwise it is [1, 0] representing
+    # the solution is 1, otherwise it is 0 representing
     # cells that did not divide.
     def GetSolution(x):
-        return (tonehot(1, 2) if x.parent != 0 else tonehot(0, 2),)
+        return (1.0 if x.parent != 0 else 0.0,)
 
     return (
         AppendSolution(
             nodes.reset_index(drop=True), GetSolution, append_weight=False
         ),
         parenthood,
-        crops,
         properties_names,
     )
 
@@ -234,17 +215,17 @@ def GetEdge(
     )
 
     # Returns a solution for each edge. If label is the parenthood
-    # array or if label_x == label_y, the solution is [0, 1], otherwise
-    # it is [1, 0] representing edges are not connected.
+    # array or if label_x == label_y, the solution is 1, otherwise
+    # it is 0 representing edges are not connected.
     def GetSolution(df):
         if np.any(np.all(df["label"][::-1] == parenthood, axis=1)):
-            solution = tonehot(1, 2)
+            solution = 1.0
             weight = rare_event_weight
         elif df["label_x"] == df["label_y"]:
-            solution = tonehot(1, 2)
+            solution = 1.0
             weight = 1
         else:
-            solution = tonehot(0, 2)
+            solution = 0.0
             weight = 1
 
         return solution, weight
@@ -399,14 +380,6 @@ def GraphExtractor(sequence: dt.Feature = None, **kwargs):
         edgesdf, props=("feature",), **kwargs
     )
 
-    # Computes weight matrix from the adjacency matrix
-    edgeweights = edgesdf["weight"].to_numpy()
-
-    # Add indexes to the weight matrix
-    edgeweights = np.stack(
-        (np.arange(0, edgeweights.shape[0]), edgeweights), axis=1
-    )
-
     # If validation is enabled, the sparse adjacency matrix
     # contains the frame index for each edge (mainly for
     # visualization porposes)
@@ -426,6 +399,17 @@ def GraphExtractor(sequence: dt.Feature = None, **kwargs):
         # Add frames to the node features matrix
         frames = nodesdf.filter(like="frame").to_numpy()
         nodefeatures = np.concatenate((frames, nodefeatures), axis=-1)
+
+        # Weights edges equally
+        edgeweights = np.ones(sparseadjmtx.shape[0])
+    else:
+        # Computes weight matrix from the adjacency matrix
+        edgeweights = edgesdf["weight"].to_numpy()
+
+    # Add indexes to the weight matrix
+    edgeweights = np.stack(
+        (np.arange(0, edgeweights.shape[0]), edgeweights), axis=1
+    )
 
     return (
         (nodefeatures, edgefeatures, sparseadjmtx, edgeweights),
@@ -484,7 +468,7 @@ def SelfDuplicateEdgeAugmentation(edges, w, maxnofedges=None, idxs=None):
         weights.append(w)
 
         # Duplicate the edges
-        edge = np.concatenate((edge, edge[idx, :]), axis=0)
+        edge = np.concatenate((edge, edge[idx]), axis=0)
         return edge
 
     return list(map(inner, enumerate(zip(edges, w)))), weights, idxs
