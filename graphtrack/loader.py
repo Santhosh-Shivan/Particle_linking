@@ -350,9 +350,9 @@ class ContinuousGraphGenerator(dt.generators.ContinuousGenerator):
 
             # Clips edge features and adjacency matrix to the index
             # of the last node
-            edgef = batch[i][1][:last_node_idx, :]
-            adjmx = batch[i][2][:last_node_idx, :]
-            wghts = batch[i][3][:last_node_idx, :]
+            edgef = batch[i][1][:last_node_idx]
+            adjmx = batch[i][2][:last_node_idx]
+            wghts = batch[i][3][:last_node_idx]
 
             inputs[1].append(edgef)
             inputs[2].append(adjmx)
@@ -362,8 +362,8 @@ class ContinuousGraphGenerator(dt.generators.ContinuousGenerator):
             nofedges.append(np.shape(edgef)[0])
 
             # Clips node and edge solutions
-            nodesol = labels[i][0][:cropNodesTo, :]
-            edgesol = labels[i][1][:last_node_idx, :]
+            nodesol = labels[i][0][:cropNodesTo]
+            edgesol = labels[i][1][:last_node_idx]
 
             outputs[0].append(nodesol)
             outputs[1].append(edgesol)
