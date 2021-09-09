@@ -362,7 +362,7 @@ def GraphExtractor(sequence: dt.Feature = None, **kwargs):
         A sequence of frames.
     """
     # Extract nodes from the sequence
-    nodesdf, parenthood, _, properties = NodeExtractor(sequence, **kwargs)
+    nodesdf, parenthood, properties = NodeExtractor(sequence, **kwargs)
 
     # Extract edges and edge features from nodes
     edgesdf = EdgeExtractor(
