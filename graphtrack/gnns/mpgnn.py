@@ -83,7 +83,8 @@ class mpGraphNet(KerasModel):
                 **kwargs
             )(edge_layer)
 
-        layer = (node_layer, edge_layer, edges, edge_weights)
+        distance = edge_features[..., 0]
+        layer = (node_layer, edge_layer, distance, edges, edge_weights)
 
         for base_layer_number, base_layer_dimension in zip(
             range(len(base_layer_dimensions)), base_layer_dimensions
