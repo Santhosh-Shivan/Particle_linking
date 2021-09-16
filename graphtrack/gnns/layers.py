@@ -249,89 +249,6 @@ class MultiHeadSelfAttention(tf.keras.layers.Layer):
         return output
 
 
-class EdgeSelfAttentionLayer(MultiHeadSelfAttention):
-    """
-    Edge self-attention layer. Attention-based edge weighting.
-    Parameters
-    ----------
-    number_of_heads : int
-        Number of attention heads.
-    """
-
-    def __init__(self, number_of_heads, **kwargs):
-        super().__init__(number_of_heads, **kwargs)
-
-    def reshape_to_matrix(self, x, edges, batch_size, value=None):
-        """
-        Reshape to matrix.
-        Parameters
-        ----------
-        x : tf.Tensor
-            Input tensor.
-        edges : tf.Tensor
-            Edges tensor.
-        batch_size : int
-            Batch size.
-        value : tf.Tensor
-            Value tensor.
-        """
-        batch_dims = tf.range(batch_size)
-        batch_dims = tf.repeat(batch_dims, tf.shape(edges)[1])
-        batch_dims = tf.reshape(
-            batch_dims, shape=(batch_size, tf.shape(edges)[1], 1)
-        )
-        indices = tf.concat([batch_dims, edges], axis=-1)
-
-        x = tf.tensor_scatter_nd_update(x, indices, value)
-        return x
-
-    def call(self, x, edges, edge_features):
-        """
-        Call the layer.
-        Parameters
-        ----------
-        x : tuple of tf.Tensors
-            Input tensors.
-        """
-        # Compute attention weights. Note that the softmax
-        # normalization is set to False.
-        att_weights, batch_size = self.compute_attention(x, softmax_norm=False)
-
-        # Compute mean attention weights over the heads.
-        att_weights = tf.math.reduce_mean(att_weights, axis=1)
-
-        # Create attention mask
-        mask = tf.zeros_like(att_weights)
-        mask = self.reshape_to_matrix(
-            mask,
-            edges,
-            batch_size,
-            value=tf.ones((batch_size, tf.shape(edges)[1])),
-        )
-
-        # Normalize mask to avoid numerical issues.
-        mask = -10e9 * (1.0 - mask)
-
-        # Apply mask to the attention weights before softmax.
-        att_weights += mask
-
-        # Reshape node distances to matrix.
-        distance = tf.ones_like(att_weights)
-        distance = self.reshape_to_matrix(
-            distance, edges, batch_size, value=edge_features
-        )
-
-        # scale attention weights by distance
-        att_weights = tf.math.divide(att_weights, distance)
-
-        # Apply softmax to the attention weights.
-        att_weights = tf.nn.softmax(att_weights, axis=-1)
-
-        # Retrieve the edge weights.
-        edge_weights = tf.gather_nd(att_weights, edges, batch_dims=1)
-        return edge_weights
-
-
 class GraphLayer(tf.keras.layers.Layer):
     """
     Message passing layer.
@@ -367,10 +284,6 @@ class GraphLayer(tf.keras.layers.Layer):
             ]
         )
 
-        self.edge_attention_layer = EdgeSelfAttentionLayer(
-            number_of_heads=self.number_of_heads
-        )
-
         self.update_layer = tf.keras.Sequential(
             [
                 MultiHeadSelfAttention(
@@ -381,6 +294,15 @@ class GraphLayer(tf.keras.layers.Layer):
                 ),
                 layers.LayerNormalization(),
             ]
+        )
+
+    def build(self, input_shape):
+        self.sigma = tf.Variable(
+            initial_value=tf.constant_initializer(value=0.031)(
+                shape=(1,), dtype="float32"
+            ),
+            name="sigma",
+            trainable=True,
         )
 
     def call(self, inputs):
@@ -425,7 +347,9 @@ class GraphLayer(tf.keras.layers.Layer):
 
         # Compute edge weights and apply them to the messages
         # shape = (batch, nOfedges, filters)
-        edge_weights = self.edge_attention_layer(nodes, edges, distance)
+        edge_weights = tf.math.exp(
+            (-1 * distance ** 2) / (2 * self.sigma ** 2)
+        )
         weighted_messages = messages * edge_weights[..., tf.newaxis]
 
         # Merge repeated edges, shape = (batch, nOfedges (before augmentation), filters)
