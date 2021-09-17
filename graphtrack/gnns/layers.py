@@ -305,6 +305,14 @@ class GraphLayer(tf.keras.layers.Layer):
             trainable=True,
         )
 
+        self.beta = tf.Variable(
+            initial_value=tf.constant_initializer(value=1)(
+                shape=(1,), dtype="float32"
+            ),
+            name="beta",
+            trainable=True,
+        )
+
     def call(self, inputs):
         nodes, edge_features, distance, edges, _ = inputs
 
@@ -348,7 +356,7 @@ class GraphLayer(tf.keras.layers.Layer):
         # Compute edge weights and apply them to the messages
         # shape = (batch, nOfedges, filters)
         edge_weights = tf.math.exp(
-            (-1 * distance ** 2) / (2 * self.sigma ** 2)
+            -1 * ((distance ** 2) / (2 * self.sigma ** 2)) ** self.beta
         )
         weighted_messages = messages * edge_weights[..., tf.newaxis]
 
