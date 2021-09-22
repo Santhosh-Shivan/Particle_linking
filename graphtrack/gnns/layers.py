@@ -298,11 +298,12 @@ class GraphLayer(tf.keras.layers.Layer):
 
     def build(self, input_shape):
         self.sigma = tf.Variable(
-            initial_value=tf.constant_initializer(value=0.031)(
+            initial_value=tf.constant_initializer(value=0.01)(
                 shape=(1,), dtype="float32"
             ),
             name="sigma",
             trainable=True,
+            constraint=lambda value: tf.clip_by_value(value, 0.002, 0.1),
         )
 
         self.beta = tf.Variable(
@@ -311,6 +312,7 @@ class GraphLayer(tf.keras.layers.Layer):
             ),
             name="beta",
             trainable=True,
+            constraint=lambda value: tf.clip_by_value(value, 1, 4),
         )
 
     def call(self, inputs):
