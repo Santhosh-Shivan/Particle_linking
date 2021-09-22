@@ -400,9 +400,6 @@ class ContinuousGraphGenerator(dt.generators.ContinuousGenerator):
         return inputs, outputs
 
 
-conf = {}
-
-
 def GraphGenerator(min_data_size=1000, max_data_size=2000, **kwargs):
     """
     Returns a generator that generates graphs asynchronously.
@@ -416,8 +413,6 @@ def GraphGenerator(min_data_size=1000, max_data_size=2000, **kwargs):
         Keyword arguments to pass to the features.
     """
     feature = GetLoaders(**kwargs)
-
-    conf["feature"] = feature
 
     # Removes augmentation from kwargs
     kwargs.pop("augmentation", None)
@@ -445,7 +440,7 @@ def GetValidationSet(size=None, **kwargs):
         size of the validation set
     """
     # Get the data loader
-    loader = conf["feature"]
+    loader = GetLoaders(**kwargs)
 
     # Lists of graphs and solutions
     sequences = []
