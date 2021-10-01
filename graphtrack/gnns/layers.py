@@ -298,21 +298,21 @@ class GraphLayer(tf.keras.layers.Layer):
 
     def build(self, input_shape):
         self.sigma = tf.Variable(
-            initial_value=tf.constant_initializer(value=0.01)(
+            initial_value=tf.constant_initializer(value=0.005)(
                 shape=(1,), dtype="float32"
             ),
             name="sigma",
             trainable=True,
-            constraint=lambda value: tf.clip_by_value(value, 0.002, 0.1),
+            constraint=lambda value: tf.clip_by_value(value, 0.002, 1),
         )
 
         self.beta = tf.Variable(
-            initial_value=tf.constant_initializer(value=1)(
+            initial_value=tf.constant_initializer(value=4)(
                 shape=(1,), dtype="float32"
             ),
             name="beta",
             trainable=True,
-            constraint=lambda value: tf.clip_by_value(value, 1, 4),
+            constraint=lambda value: tf.clip_by_value(value, 1, 10),
         )
 
     def call(self, inputs):
@@ -358,7 +358,11 @@ class GraphLayer(tf.keras.layers.Layer):
         # Compute edge weights and apply them to the messages
         # shape = (batch, nOfedges, filters)
         edge_weights = tf.math.exp(
-            -1 * ((distance ** 2) / (2 * self.sigma ** 2)) ** self.beta
+            -1
+            * tf.math.pow(
+                tf.math.square(distance) / (2 * tf.math.square(self.sigma)),
+                self.beta,
+            )
         )
         weighted_messages = messages * edge_weights[..., tf.newaxis]
 
@@ -367,8 +371,10 @@ class GraphLayer(tf.keras.layers.Layer):
             message, edge = x
 
             merged_edges = tf.math.unsorted_segment_sum(
+                # tf.concat([message, message], 0),
                 message,
-                edge[: tf.shape(message)[0], 1],
+                # tf.concat([edge[:, 1], edge[:, 0]], 0),
+                edge[:, 1],
                 number_of_nodes,
             )
 
@@ -388,6 +394,7 @@ class GraphLayer(tf.keras.layers.Layer):
         return (
             updated_nodes,
             weighted_messages,
+            # messages,
             distance,
             edges,
             edge_weights,
