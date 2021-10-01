@@ -455,9 +455,15 @@ def SelfDuplicateEdgeAugmentation(edges, w, maxnofedges=None, idxs=None):
             probability[w[:, 1] > 1] = 2
             probability = probability / np.sum(probability)
 
-            idx = np.random.choice(
-                nofedges, offset, replace=False, p=list(probability)
-            )
+            # TODO: Design more efficient to replicate edges
+            if offset > len(edge):
+                idx = np.random.choice(
+                    nofedges, offset, replace=True, p=list(probability)
+                )
+            else:
+                idx = np.random.choice(
+                    nofedges, offset, replace=False, p=list(probability)
+                )
             idxs.append(idx)
 
         # Balances repeated edges
