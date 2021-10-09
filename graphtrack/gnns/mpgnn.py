@@ -16,10 +16,14 @@ class mpGraphNet(KerasModel):
         List of the number of nodes in each dense layer.
     base_layer_dimensions: list of ints
         List of the number of nodes in each base layer.
-    number_of_outputs: int
-        Number of output nodes.
-    output_activation: str
-        Activation function for the output layer.
+    number_of_node_outputs: int
+        Number of output node features.
+    number_of_edge_outputs: int
+        Number of output edge features.
+    node_output_activation: str
+        Activation function for the output node layer.
+    edge_output_activation: str
+        Activation function for the output edge layer.
     dense_block: str
         Name of the dense block.
     output_type: str
@@ -43,8 +47,10 @@ class mpGraphNet(KerasModel):
         base_layer_dimensions=(72, 72),
         number_of_node_features=7,
         number_of_edge_features=7,
-        number_of_outputs=3,
-        output_activation=None,
+        number_of_node_outputs=1,
+        number_of_edge_outputs=1,
+        node_output_activation=None,
+        edge_output_activation=None,
         dense_block="graphdense",
         output_type="graph",
         loss=[
@@ -114,14 +120,14 @@ class mpGraphNet(KerasModel):
 
         # Output layers
         node_output = layers.Dense(
-            number_of_outputs,
-            activation=output_activation,
+            number_of_node_outputs,
+            activation=node_output_activation,
             name="node_prediction",
         )(node_layer)
 
         edge_output = layers.Dense(
-            number_of_outputs,
-            activation=output_activation,
+            number_of_edge_outputs,
+            activation=edge_output_activation,
             name="edge_prediction",
         )(edge_layer)
 
