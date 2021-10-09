@@ -217,11 +217,11 @@ def GetEdge(
     # Returns a solution for each edge. If label is the parenthood
     # array or if label_x == label_y, the solution is 1, otherwise
     # it is 0 representing edges are not connected.
-    def GetSolution(df):
-        if np.any(np.all(df["label"][::-1] == parenthood, axis=1)):
+    def GetSolution(x):
+        if np.any(np.all(x["label"][::-1] == parenthood, axis=1)):
             solution = 1.0
             weight = rare_event_weight
-        elif df["label_x"] == df["label_y"]:
+        elif x["label_x"] == x["label_y"]:
             solution = 1.0
             weight = 1
         else:
