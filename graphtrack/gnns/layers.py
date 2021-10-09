@@ -153,6 +153,7 @@ class MultiHeadSelfAttention(tf.keras.layers.Layer):
         self.query_dense = layers.Dense(filters)
         self.key_dense = layers.Dense(filters)
         self.value_dense = layers.Dense(filters)
+        self.gate_dense = layers.Dense(filters, activation="sigmoid")
         self.combine_dense = layers.Dense(filters)
 
         self.att_weights = tf.Variable(
@@ -162,7 +163,9 @@ class MultiHeadSelfAttention(tf.keras.layers.Layer):
             shape=tf.TensorShape([None, self.number_of_heads, None, None]),
         )
 
-    def SingleAttention(self, query, key, value, softmax_norm=True, **kwargs):
+    def SingleAttention(
+        self, query, key, value, gate, softmax_norm=True, **kwargs
+    ):
         """
         Single attention layer.
         Parameters
@@ -183,7 +186,8 @@ class MultiHeadSelfAttention(tf.keras.layers.Layer):
 
         weights = tf.nn.softmax(scaled_score, axis=-1)
         output = tf.matmul(weights, value)
-        return output, weights
+        gated_output = tf.math.multiply(output, gate)
+        return gated_output, weights
 
     def separate_heads(self, x, batch_size):
         """
@@ -221,12 +225,17 @@ class MultiHeadSelfAttention(tf.keras.layers.Layer):
         query = self.query_dense(x)
         key = self.key_dense(x)
         value = self.value_dense(x)
+        gate = self.gate_dense(x)
 
         query = self.separate_heads(query, batch_size)
         key = self.separate_heads(key, batch_size)
         value = self.separate_heads(value, batch_size)
+        gate = self.separate_heads(gate, batch_size)
 
-        return (self.SingleAttention(query, key, value, **kwargs), batch_size)
+        return (
+            self.SingleAttention(query, key, value, gate, **kwargs),
+            batch_size,
+        )
 
     def call(self, x, **kwargs):
         """
@@ -394,7 +403,6 @@ class GraphLayer(tf.keras.layers.Layer):
         return (
             updated_nodes,
             weighted_messages,
-            # messages,
             distance,
             edges,
             edge_weights,
