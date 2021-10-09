@@ -350,9 +350,9 @@ class ContinuousGraphGenerator(dt.generators.ContinuousGenerator):
 
             # Clips edge features and adjacency matrix to the index
             # of the last node
-            edgef = batch[i][1][:last_node_idx, :]
-            adjmx = batch[i][2][:last_node_idx, :]
-            wghts = batch[i][3][:last_node_idx, :]
+            edgef = batch[i][1][:last_node_idx]
+            adjmx = batch[i][2][:last_node_idx]
+            wghts = batch[i][3][:last_node_idx]
 
             inputs[1].append(edgef)
             inputs[2].append(adjmx)
@@ -362,8 +362,8 @@ class ContinuousGraphGenerator(dt.generators.ContinuousGenerator):
             nofedges.append(np.shape(edgef)[0])
 
             # Clips node and edge solutions
-            nodesol = labels[i][0][:cropNodesTo, :]
-            edgesol = labels[i][1][:last_node_idx, :]
+            nodesol = labels[i][0][:cropNodesTo]
+            edgesol = labels[i][1][:last_node_idx]
 
             outputs[0].append(nodesol)
             outputs[1].append(edgesol)
@@ -400,9 +400,6 @@ class ContinuousGraphGenerator(dt.generators.ContinuousGenerator):
         return inputs, outputs
 
 
-conf = {}
-
-
 def GraphGenerator(min_data_size=1000, max_data_size=2000, **kwargs):
     """
     Returns a generator that generates graphs asynchronously.
@@ -416,8 +413,6 @@ def GraphGenerator(min_data_size=1000, max_data_size=2000, **kwargs):
         Keyword arguments to pass to the features.
     """
     feature = GetLoaders(**kwargs)
-
-    conf["feature"] = feature
 
     # Removes augmentation from kwargs
     kwargs.pop("augmentation", None)
@@ -445,7 +440,7 @@ def GetValidationSet(size=None, **kwargs):
         size of the validation set
     """
     # Get the data loader
-    loader = conf["feature"]
+    loader = GetLoaders(**kwargs)
 
     # Lists of graphs and solutions
     sequences = []

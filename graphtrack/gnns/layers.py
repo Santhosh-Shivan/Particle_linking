@@ -120,7 +120,6 @@ def DenseBlock_(activation=tfa.activations.gelu, layer_norm=False, **kwargs):
     return Layer
 
 
-# @register("multiheadatt")
 class MultiHeadSelfAttention(tf.keras.layers.Layer):
     """Multi-head self-attention layer.
     Parameters
@@ -139,7 +138,11 @@ class MultiHeadSelfAttention(tf.keras.layers.Layer):
         """
         Build the layer.
         """
-        filters = input_shape[1][-1]
+        try:
+            filters = input_shape[1][-1]
+        except TypeError:
+            filters = input_shape[-1]
+
         if filters % self.number_of_heads != 0:
             raise ValueError(
                 f"embedding dimension = {filters} should be divisible by number of heads = {self.number_of_heads}"
@@ -150,16 +153,19 @@ class MultiHeadSelfAttention(tf.keras.layers.Layer):
         self.query_dense = layers.Dense(filters)
         self.key_dense = layers.Dense(filters)
         self.value_dense = layers.Dense(filters)
+        self.gate_dense = layers.Dense(filters, activation="sigmoid")
         self.combine_dense = layers.Dense(filters)
 
         self.att_weights = tf.Variable(
-            1.0,
+            tf.zeros((1, self.number_of_heads, 1, 1)),
             name="attention_weights",
             dtype=tf.float32,
-            shape=tf.TensorShape(None),
+            shape=tf.TensorShape([None, self.number_of_heads, None, None]),
         )
 
-    def SingleAttention(self, query, key, value):
+    def SingleAttention(
+        self, query, key, value, gate, softmax_norm=True, **kwargs
+    ):
         """
         Single attention layer.
         Parameters
@@ -174,9 +180,14 @@ class MultiHeadSelfAttention(tf.keras.layers.Layer):
         score = tf.matmul(query, key, transpose_b=True)
         dim_key = tf.cast(tf.shape(key)[-1], score.dtype)
         scaled_score = score / tf.math.sqrt(dim_key)
+
+        if not softmax_norm:
+            return scaled_score
+
         weights = tf.nn.softmax(scaled_score, axis=-1)
         output = tf.matmul(weights, value)
-        return output, weights
+        gated_output = tf.math.multiply(output, gate)
+        return gated_output, weights
 
     def separate_heads(self, x, batch_size):
         """
@@ -195,7 +206,38 @@ class MultiHeadSelfAttention(tf.keras.layers.Layer):
         )
         return tf.transpose(x, perm=[0, 2, 1, 3])
 
-    def call(self, x):
+    def compute_attention(self, x, **kwargs):
+        """
+        Compute attention.
+        Parameters
+        ----------
+        x : tf.Tensor
+            Input tensor.
+        kwargs
+            Other arguments to pass to SingleAttention.
+        """
+        if not isinstance(x, list):
+            x = [x]
+
+        x = tf.concat(x, axis=-1)
+        batch_size = tf.shape(x)[0]
+
+        query = self.query_dense(x)
+        key = self.key_dense(x)
+        value = self.value_dense(x)
+        gate = self.gate_dense(x)
+
+        query = self.separate_heads(query, batch_size)
+        key = self.separate_heads(key, batch_size)
+        value = self.separate_heads(value, batch_size)
+        gate = self.separate_heads(gate, batch_size)
+
+        return (
+            self.SingleAttention(query, key, value, gate, **kwargs),
+            batch_size,
+        )
+
+    def call(self, x, **kwargs):
         """
         Call the layer.
         Parameters
@@ -203,31 +245,19 @@ class MultiHeadSelfAttention(tf.keras.layers.Layer):
         x : tuple of tf.Tensors
             Input tensors.
         """
-        nodes, aggregated = x
-
-        batch_size = tf.shape(nodes)[0]
-        x = tf.concat([nodes, aggregated], axis=-1)
-
-        query = self.query_dense(x)
-        key = self.key_dense(x)
-        value = self.value_dense(x)
-
-        query = self.separate_heads(query, batch_size)
-        key = self.separate_heads(key, batch_size)
-        value = self.separate_heads(value, batch_size)
-
-        attention, att_weights = self.SingleAttention(query, key, value)
-        self.att_weights.assign(att_weights)
+        (attention, att_weights), batch_size = self.compute_attention(
+            x, **kwargs
+        )
         attention = tf.transpose(attention, perm=[0, 2, 1, 3])
         concat_attention = tf.reshape(
             attention, (batch_size, -1, self.filters)
         )
         output = self.combine_dense(concat_attention)
+        self.att_weights.assign(att_weights)
 
         return output
 
 
-# @register("graphlayer")
 class GraphLayer(tf.keras.layers.Layer):
     """
     Message passing layer.
@@ -275,8 +305,27 @@ class GraphLayer(tf.keras.layers.Layer):
             ]
         )
 
+    def build(self, input_shape):
+        self.sigma = tf.Variable(
+            initial_value=tf.constant_initializer(value=0.005)(
+                shape=(1,), dtype="float32"
+            ),
+            name="sigma",
+            trainable=True,
+            constraint=lambda value: tf.clip_by_value(value, 0.002, 1),
+        )
+
+        self.beta = tf.Variable(
+            initial_value=tf.constant_initializer(value=4)(
+                shape=(1,), dtype="float32"
+            ),
+            name="beta",
+            trainable=True,
+            constraint=lambda value: tf.clip_by_value(value, 1, 10),
+        )
+
     def call(self, inputs):
-        nodes, edge_features, edges, edge_weights = inputs
+        nodes, edge_features, distance, edges, _ = inputs
 
         number_of_nodes = tf.shape(nodes)[1]
         number_of_edges = tf.shape(edges)[1]
@@ -315,32 +364,35 @@ class GraphLayer(tf.keras.layers.Layer):
                 noise_shape=(1, number_of_edges, 1),
             )
 
-        # If weights are provided, apply them to the messages
+        # Compute edge weights and apply them to the messages
         # shape = (batch, nOfedges, filters)
-        weighted_messages = messages * edge_weights[..., 1:2]
+        edge_weights = tf.math.exp(
+            -1
+            * tf.math.pow(
+                tf.math.square(distance) / (2 * tf.math.square(self.sigma)),
+                self.beta,
+            )
+        )
+        weighted_messages = messages * edge_weights[..., tf.newaxis]
 
         # Merge repeated edges, shape = (batch, nOfedges (before augmentation), filters)
         def aggregate(_, x):
-            message, weights, edge = x
+            message, edge = x
 
-            merged_ragged_edges = tf.math.unsorted_segment_sum(
+            merged_edges = tf.math.unsorted_segment_sum(
+                # tf.concat([message, message], 0),
                 message,
-                tf.cast(weights[..., 0], tf.int32),
-                num_segments=tf.shape(tf.unique(weights[..., 0])[0])[0],
-            )
-
-            augmented_merged_edges = tf.math.unsorted_segment_sum(
-                merged_ragged_edges,
-                edge[: tf.shape(merged_ragged_edges)[0], 1],
+                # tf.concat([edge[:, 1], edge[:, 0]], 0),
+                edge[:, 1],
                 number_of_nodes,
             )
 
-            return augmented_merged_edges
+            return merged_edges
 
         # Aggregate messages, shape = (batch, nOfnodes, filters)
         aggregated = tf.scan(
             aggregate,
-            (weighted_messages, edge_weights, edges),
+            (weighted_messages, edges),
             initializer=tf.zeros((number_of_nodes, number_of_node_features)),
         )
 
@@ -351,7 +403,7 @@ class GraphLayer(tf.keras.layers.Layer):
         return (
             updated_nodes,
             weighted_messages,
-            # messages,
+            distance,
             edges,
             edge_weights,
         )
