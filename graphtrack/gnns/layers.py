@@ -8,8 +8,9 @@ from tensorflow.keras import activations, layers
 import tensorflow as tf
 from tensorflow.python.keras.backend import dtype
 import tensorflow_addons as tfa
-from tensorflow.python.keras.layers import normalization
-from tensorflow.python.ops.nn_impl import normalize
+
+# from tensorflow.python.keras.layers import normalization
+# from tensorflow.python.ops.nn_impl import normalize
 
 try:
     from tensorflow_addons.layers import InstanceNormalization
@@ -380,9 +381,7 @@ class GraphLayer(tf.keras.layers.Layer):
             message, edge = x
 
             merged_edges = tf.math.unsorted_segment_sum(
-                # tf.concat([message, message], 0),
                 message,
-                # tf.concat([edge[:, 1], edge[:, 0]], 0),
                 edge[:, 1],
                 number_of_nodes,
             )
@@ -398,6 +397,263 @@ class GraphLayer(tf.keras.layers.Layer):
 
         # Update node features, (nOfnode, filters)
         Combined = [nodes, aggregated]
+        updated_nodes = self.update_layer(Combined)
+
+        return (
+            updated_nodes,
+            weighted_messages,
+            distance,
+            edges,
+            edge_weights,
+        )
+
+
+class GraphLayerV2(tf.keras.layers.Layer):
+    """
+    Message passing layer.
+    Parameters
+    ----------
+    filters : int
+        Number of filters.
+    number_of_heads : int
+        Number of attention heads.
+    random_edge_dropout : float, optional
+        Random edge dropout.
+    """
+
+    def __init__(
+        self,
+        filters,
+        number_of_heads=12,
+        random_edge_dropout=False,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.filters = filters
+        self.number_of_heads = number_of_heads
+        self.random_edge_dropout = random_edge_dropout
+
+        self.message_layer = tf.keras.Sequential(
+            [
+                layers.Dense(self.filters),
+                tf.keras.layers.Lambda(
+                    lambda x: tfa.activations.gelu(x, approximate=False)
+                ),
+                layers.LayerNormalization(),
+            ]
+        )
+
+        self.update_layer = tf.keras.Sequential(
+            [
+                MultiHeadSelfAttention(
+                    number_of_heads=self.number_of_heads,
+                ),
+                tf.keras.layers.Lambda(
+                    lambda x: tfa.activations.gelu(x, approximate=False)
+                ),
+                layers.LayerNormalization(),
+            ]
+        )
+
+        self.transition_layer = tf.keras.Sequential(
+            [
+                layers.Dense(self.filters),
+                tf.keras.layers.Lambda(
+                    lambda x: tfa.activations.gelu(x, approximate=False)
+                ),
+                layers.LayerNormalization(),
+            ]
+        )
+
+    def build(self, input_shape):
+        self.sigma = tf.Variable(
+            initial_value=tf.constant_initializer(value=0.005)(
+                shape=(1,), dtype="float32"
+            ),
+            name="sigma",
+            trainable=True,
+            constraint=lambda value: tf.clip_by_value(value, 0.002, 1),
+        )
+
+        self.beta = tf.Variable(
+            initial_value=tf.constant_initializer(value=4)(
+                shape=(1,), dtype="float32"
+            ),
+            name="beta",
+            trainable=True,
+            constraint=lambda value: tf.clip_by_value(value, 1, 10),
+        )
+
+    def call(self, inputs):
+        nodes, edge_features, distance, edges, _ = inputs
+
+        number_of_nodes = tf.shape(nodes)[1]
+        number_of_edges = tf.shape(edges)[1]
+        number_of_node_features = nodes.shape[-1]
+
+        batch_size = tf.shape(nodes)[0]
+
+        nodes = self.update_layer(nodes)
+
+        # Get neighbors node features, shape = (batch, nOfedges, 2, nOffeatures)
+        message_inputs = tf.gather(nodes, edges, batch_dims=1)
+
+        # Concatenate nodes features with edge features,
+        # shape = (batch, nOfedges, 2*nOffeatures + nOffedgefeatures)
+        messages = tf.reshape(
+            message_inputs,
+            (
+                batch_size,
+                number_of_edges,
+                2 * number_of_node_features,
+            ),
+        )
+        reshaped = tf.concat(
+            [
+                messages,
+                edge_features,
+            ],
+            -1,
+        )
+
+        # Compute messages/update edges, shape = (batch, nOfedges, filters)
+        messages = self.message_layer(reshaped)
+
+        if self.random_edge_dropout:
+            messages = tf.nn.dropout(
+                messages,
+                self.random_edge_dropout,
+                noise_shape=(1, number_of_edges, 1),
+            )
+
+        # Compute edge weights and apply them to the messages
+        # shape = (batch, nOfedges, filters)
+        edge_weights = tf.math.exp(
+            -1
+            * tf.math.pow(
+                tf.math.square(distance) / (2 * tf.math.square(self.sigma)),
+                self.beta,
+            )
+        )
+        weighted_messages = messages * edge_weights[..., tf.newaxis]
+
+        # Merge repeated edges, shape = (batch, nOfedges (before augmentation), filters)
+        def aggregate(_, x):
+            message, edge = x
+
+            merged_edges = tf.math.unsorted_segment_sum(
+                message,
+                edge[:, 1],
+                number_of_nodes,
+            )
+
+            return merged_edges
+
+        # Aggregate messages, shape = (batch, nOfnodes, filters)
+        aggregated = tf.scan(
+            aggregate,
+            (weighted_messages, edges),
+            initializer=tf.zeros((number_of_nodes, number_of_node_features)),
+        )
+
+        updated_nodes = self.transition_layer(aggregated)
+
+        return (
+            updated_nodes,
+            weighted_messages,
+            distance,
+            edges,
+            edge_weights,
+        )
+
+
+class ClassTokenGraphLayer(GraphLayer):
+    def __init__(self, filters, **kwargs):
+        self.combine_layer = tf.keras.Sequential(
+            [
+                tf.keras.layers.Lambda(lambda x: tf.concat(x, axis=-1)),
+                layers.Dense(filters),
+            ]
+        )
+        super().__init__(self, filters=filters ** kwargs)
+
+    def call(self, inputs):
+        nodes, edge_features, distance, edges, _ = inputs
+
+        # Split nodes and class-token embeddings
+        nodes, class_token = nodes[:, 1:, :], nodes[:, 0:1, :]
+
+        number_of_nodes = tf.shape(nodes)[1]
+        number_of_edges = tf.shape(edges)[1]
+        number_of_node_features = nodes.shape[-1]
+
+        batch_size = tf.shape(nodes)[0]
+
+        # Get neighbors node features, shape = (batch, nOfedges, 2, nOffeatures)
+        message_inputs = tf.gather(nodes, edges, batch_dims=1)
+
+        # Concatenate nodes features with edge features,
+        # shape = (batch, nOfedges, 2*nOffeatures + nOffedgefeatures)
+        messages = tf.reshape(
+            message_inputs,
+            (
+                batch_size,
+                number_of_edges,
+                2 * number_of_node_features,
+            ),
+        )
+        reshaped = tf.concat(
+            [
+                messages,
+                edge_features,
+            ],
+            -1,
+        )
+
+        # Compute messages/update edges, shape = (batch, nOfedges, filters)
+        messages = self.message_layer(reshaped)
+
+        if self.random_edge_dropout:
+            messages = tf.nn.dropout(
+                messages,
+                self.random_edge_dropout,
+                noise_shape=(1, number_of_edges, 1),
+            )
+
+        # Compute edge weights and apply them to the messages
+        # shape = (batch, nOfedges, filters)
+        edge_weights = tf.math.exp(
+            -1
+            * tf.math.pow(
+                tf.math.square(distance) / (2 * tf.math.square(self.sigma)),
+                self.beta,
+            )
+        )
+        weighted_messages = messages * edge_weights[..., tf.newaxis]
+
+        # Merge repeated edges, shape = (batch, nOfedges (before augmentation), filters)
+        def aggregate(_, x):
+            message, edge = x
+
+            merged_edges = tf.math.unsorted_segment_sum(
+                message,
+                edge[:, 1],
+                number_of_nodes,
+            )
+
+            return merged_edges
+
+        # Aggregate messages, shape = (batch, nOfnodes, filters)
+        aggregated = tf.scan(
+            aggregate,
+            (weighted_messages, edges),
+            initializer=tf.zeros((number_of_nodes, number_of_node_features)),
+        )
+
+        # Update node features, (nOfnode, filters)
+        Combined = tf.concat(
+            [class_token, self.combine_layer([nodes, aggregated])], axis=1
+        )
         updated_nodes = self.update_layer(Combined)
 
         return (

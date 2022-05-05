@@ -73,9 +73,7 @@ class Scatterer(Feature):
     __list_merge_strategy__ = MERGE_STRATEGY_APPEND
     __distributed__ = False
     __conversion_table__ = ConversionTable(
-        position=(u.pixel, u.pixel),
-        z=(u.pixel, u.pixel),
-        voxel_size=(u.meter, u.meter),
+        position=(u.pixel, u.pixel), z=(u.pixel, u.pixel), voxel_size=(u.meter, u.meter)
     )
 
     def __init__(
@@ -108,13 +106,7 @@ class Scatterer(Feature):
         return properties
 
     def _process_and_get(
-        self,
-        *args,
-        voxel_size,
-        upsample,
-        upsample_axes=None,
-        crop_empty=True,
-        **kwargs
+        self, *args, voxel_size, upsample, upsample_axes=None, crop_empty=True, **kwargs
     ):
         # Post processes the created object to handle upsampling,
         # as well as cropping empty slices.
@@ -287,9 +279,7 @@ class Ellipse(Scatterer):
             Y = Yt
 
         # Evaluate ellipse
-        mask = (
-            (X * X) / (rad[0] * rad[0]) + (Y * Y) / (rad[1] * rad[1]) < 1
-        ) * 1.0
+        mask = ((X * X) / (rad[0] * rad[0]) + (Y * Y) / (rad[1] * rad[1]) < 1) * 1.0
         mask = np.expand_dims(mask, axis=-1)
         return mask
 
@@ -331,9 +321,7 @@ class Sphere(Scatterer):
         x = np.arange(-rad_ceil[0], rad_ceil[0])
         y = np.arange(-rad_ceil[1], rad_ceil[1])
         z = np.arange(-rad_ceil[2], rad_ceil[2])
-        X, Y, Z = np.meshgrid(
-            (x / rad[0]) ** 2, (y / rad[1]) ** 2, (z / rad[2]) ** 2
-        )
+        X, Y, Z = np.meshgrid((x / rad[0]) ** 2, (y / rad[1]) ** 2, (z / rad[2]) ** 2)
 
         mask = (X + Y + Z <= 1) * 1.0
 
@@ -514,9 +502,7 @@ class MieScatterer(Scatterer):
 
     def __init__(
         self,
-        coefficients: Callable[
-            ..., Callable[[int], Tuple[ArrayLike, ArrayLike]]
-        ],
+        coefficients: Callable[..., Callable[[int], Tuple[ArrayLike, ArrayLike]]],
         offset_z: PropertyLike[str] = "auto",
         polarization_angle: PropertyLike[float] = 0,
         collection_angle: PropertyLike[str] = "auto",
@@ -553,15 +539,8 @@ class MieScatterer(Scatterer):
 
         if properties["L"] == "auto":
             try:
-                v = (
-                    2
-                    * np.pi
-                    * np.max(properties["radius"])
-                    / properties["wavelength"]
-                )
-                properties["L"] = int(
-                    np.ceil((v + 4 * (v ** (1 / 3)) + 2) / 10)
-                )
+                v = 2 * np.pi * np.max(properties["radius"]) / properties["wavelength"]
+                properties["L"] = int(np.ceil((v + 4 * (v ** (1 / 3)) + 2) / 10))
             except (ValueError, TypeError):
                 pass
         if properties["collection_angle"] == "auto":
@@ -628,12 +607,8 @@ class MieScatterer(Scatterer):
         E = [(2 * i + 1) / (i * (i + 1)) for i in range(1, L + 1)]
 
         # Scattering terms
-        S1 = sum(
-            [E[i] * A[i] * TAU[i] + E[i] * B[i] * PI[i] for i in range(0, L)]
-        )
-        S2 = sum(
-            [E[i] * B[i] * TAU[i] + E[i] * A[i] * PI[i] for i in range(0, L)]
-        )
+        S1 = sum([E[i] * A[i] * TAU[i] + E[i] * B[i] * PI[i] for i in range(0, L)])
+        S2 = sum([E[i] * B[i] * TAU[i] + E[i] * A[i] * PI[i] for i in range(0, L)])
 
         field = (
             (ct > ct_max)
@@ -691,9 +666,7 @@ class MieSphere(MieScatterer):
         refractive_index: PropertyLike[float] = 1.45,
         **kwargs
     ):
-        def coeffs(
-            radius, refractive_index, refractive_index_medium, wavelength
-        ):
+        def coeffs(radius, refractive_index, refractive_index_medium, wavelength):
             def inner(L):
                 return D.mie_coefficients(
                     refractive_index / refractive_index_medium,
@@ -758,9 +731,7 @@ class MieStratifiedSphere(MieScatterer):
         refractive_index: PropertyLike[ArrayLike[float]] = [1.45],
         **kwargs
     ):
-        def coeffs(
-            radius, refractive_index, refractive_index_medium, wavelength
-        ):
+        def coeffs(radius, refractive_index, refractive_index_medium, wavelength):
             assert np.all(
                 radius[1:] >= radius[:-1]
             ), "Radius of the shells of a stratified sphere should be monotonically increasing"
@@ -768,11 +739,7 @@ class MieStratifiedSphere(MieScatterer):
             def inner(L):
                 return D.stratified_mie_coefficients(
                     np.array(refractive_index) / refractive_index_medium,
-                    np.array(radius)
-                    * 2
-                    * np.pi
-                    / wavelength
-                    * refractive_index_medium,
+                    np.array(radius) * 2 * np.pi / wavelength * refractive_index_medium,
                     L,
                 )
 

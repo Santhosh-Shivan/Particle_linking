@@ -2,12 +2,19 @@ import skimage
 import numpy as np
 import pandas as pd
 import itertools
+import time
 from . import deeptrack as dt
-from .embeddings import tonehot
+
+import tqdm
+
+# from .embeddings import tonehot
 
 import more_itertools as mit
 from operator import is_not
 from functools import partial
+
+import graphtrack as gt
+from .extractors import from_masks
 
 _default_properties = {
     "area": 20000,
@@ -20,9 +27,9 @@ _default_properties = {
 
 def NodeExtractor(
     sequence: dt.Feature = None,
+    graph=None,
     properties: dict = _default_properties,
-    crop_size: int = 100,
-    resize_shape: tuple = (96, 96),
+    extractor_function=from_masks,
     **kwargs
 ):
     """
@@ -57,51 +64,9 @@ def NodeExtractor(
     # Extract cell images and masks
     images, masks = sequence
 
-    # Get the graph information (used to create ground truth)
-    graph = images.properties[0]["graph"]
-
-    # Convert images and masks to numpy arrays
-    images, masks = np.array(images), np.array(masks)
-
-    # Properties to be extracted from the cell images and masks.
-    # A normalization factor is also defined for each property.
-    # By default label and centroid are extracted
-    _properties = {"label": 1, "centroid": np.shape(images[..., 0])}
-    _properties.update(properties)
-
-    # Extract the names of the properties
-    properties_names = list(_properties.keys())
-
-    nodes = []
-
-    # Roll the axis -1 backwards before the for loop
-    iterator = map(lambda x: np.rollaxis(x, -1), (images, masks))
-
-    for frame_idx, (image, mask) in enumerate(zip(*iterator)):
-        # Compute image properties and return them as a pandas-compatible table
-        props = skimage.measure.regionprops_table(
-            mask.astype(int),
-            intensity_image=image,
-            properties=properties_names,
-        )
-
-        # Create dataframe with the properties
-        df = pd.DataFrame(props)
-
-        # normalize the properties
-        for prop in properties_names:
-            df_filtered = df.filter(like=prop) / _properties[prop]
-            df.loc[:, df_filtered.columns] = df_filtered
-
-        # Cast label to int
-        df["label"] = df["label"].astype(int)
-
-        # Pad cell images with zeros before cropping
-        image = np.pad(image, pad_width=crop_size, mode="constant")
-
-        # Add frame column to the dataframe
-        df.insert(loc=0, column="frame", value=frame_idx)
-        nodes.append(df)
+    nodes, properties_names = extractor_function(
+        images, masks, properties, **kwargs
+    )
 
     # Concatenate the dataframes in a single
     #  dataframe for the whole sequence
@@ -110,27 +75,37 @@ def NodeExtractor(
     # Add parent column to the dataframe
     nodes["parent"] = 0
 
-    # Add parent ids to each element in the dataframe
-    # if the id is different than zero
-    parenthood = graph.values
-    for child, parent in parenthood:
-        nodes.loc[
-            (nodes["label"] == child) & (nodes["frame"] > 0), "parent"
-        ] = parent
-
     # Returns a solution for each node. If a node has a parent,
     # the solution is 1, otherwise it is 0 representing
     # cells that did not divide.
     def GetSolution(x):
         return (1.0 if x.parent != 0 else 0.0,)
 
-    return (
-        AppendSolution(
-            nodes.reset_index(drop=True), GetSolution, append_weight=False
-        ),
-        parenthood,
-        properties_names,
-    )
+    # Add parent ids to each element in the dataframe
+    # if the id is different than zero
+    if not (graph is None):
+        parenthood = graph.values
+        for child, parent in parenthood:
+            nodes.loc[
+                (nodes["label"] == child) & (nodes["frame"] > 0), "parent"
+            ] = parent
+
+        return (
+            AppendSolution(
+                nodes.reset_index(drop=True), GetSolution, append_weight=False
+            ),
+            parenthood,
+            properties_names,
+        )
+    else:
+        parenthood = np.array([-1, 1])[np.newaxis, :]
+        return (
+            AppendSolution(
+                nodes.reset_index(drop=True), GetSolution, append_weight=False
+            ),
+            parenthood,
+            properties_names,
+        )
 
 
 def GetEdge(
@@ -140,7 +115,7 @@ def GetEdge(
     radius: int,
     scales: list,
     parenthood: pd.DataFrame,
-    rare_event_weight: float = 10,
+    rare_event_weight: float = 1,
     **kwargs
 ):
     """
@@ -203,7 +178,6 @@ def GetEdge(
             regex=("frame|label|index|feature")
         )
         edges.append(combdf)
-
     # Concatenate the dataframes in a single
     # dataframe for the whole set of edges
     edgedf = pd.concat(edges)
@@ -223,17 +197,20 @@ def GetEdge(
             weight = rare_event_weight
         elif x["label_x"] == x["label_y"]:
             solution = 1.0
-            weight = 1
+            weight = 1.0
         else:
             solution = 0.0
-            weight = 1
+            weight = 1.0
 
         return solution, weight
+
+    # Initialize solution and weight columns
+    edgedf[["solution", "weight"]] = [0.0, 1.0]
 
     return AppendSolution(edgedf, GetSolution)
 
 
-def EdgeExtractor(nodesdf, nofframes=2, **kwargs):
+def EdgeExtractor(nodesdf, nofframes=3, **kwargs):
     """
     Extracts edges from a sequence of frames
     Parameters
@@ -247,22 +224,37 @@ def EdgeExtractor(nodesdf, nofframes=2, **kwargs):
     # Create a copy of the dataframe to avoid overwriting
     df = nodesdf.copy()
 
-    # Create subsets from the frame list, with
-    # "nofframes" elements each
-    maxframe = range(0, df["frame"].max() + 1)
-    windows = mit.windowed(maxframe, n=nofframes, step=1)
-    windows = map(lambda x: list(filter(partial(is_not, None), x)), windows)
-
-    # Get scales for the search radius
-    scales = GetScale(nofframes)
-
     edgedfs = []
-    for window in windows:
-        # Compute the edges for each frames window
-        edgedf = GetEdge(
-            df, start=window[0], end=window[-1], scales=scales, **kwargs
+    sets = np.unique(df["set"])
+    for setid in tqdm.tqdm(sets):
+        df_set = df.loc[df["set"] == setid].copy()
+
+        # Create subsets from the frame list, with
+        # "nofframes" elements each
+        maxframe = range(0, df_set["frame"].max() + 1 + nofframes)
+        windows = mit.windowed(maxframe, n=nofframes, step=1)
+        windows = map(
+            lambda x: list(filter(partial(is_not, None), x)), windows
         )
-        edgedfs.append(edgedf)
+        windows = list(windows)[:-2]
+
+        # Get scales for the search radius
+        scales = GetScale(nofframes)
+
+        for window in windows:
+            # remove excess frames
+            window = [elem for elem in window if elem <= df_set["frame"].max()]
+
+            # Compute the edges for each frames window
+            edgedf = GetEdge(
+                df_set,
+                start=window[0],
+                end=window[-1],
+                scales=scales,
+                **kwargs
+            )
+            edgedf["set"] = setid
+            edgedfs.append(edgedf)
 
     # Concatenate the dataframes in a single
     # dataframe for the whole set of edges
@@ -353,7 +345,13 @@ def DataframeSplitter(df, props: tuple, to_array=True, **kwargs):
     return outputs
 
 
-def GraphExtractor(sequence: dt.Feature = None, **kwargs):
+def GraphExtractor(
+    sequence: dt.Feature = None,
+    validation=False,
+    nodesdf=None,
+    global_property=None,
+    **kwargs
+):
     """
     Extracts the graph from a sequence of frames
     Parameters
@@ -361,13 +359,20 @@ def GraphExtractor(sequence: dt.Feature = None, **kwargs):
     sequence: dt.Feature
         A sequence of frames.
     """
-    # Extract nodes from the sequence
-    nodesdf, parenthood, properties = NodeExtractor(sequence, **kwargs)
+
+    if nodesdf is None:
+        print("Building node features...")
+        # Extract nodes from the sequence
+        nodesdf, parenthood, properties = NodeExtractor(sequence, **kwargs)
+    else:
+        print("Loading node features...")
+        nodesdf, properties = nodesdf
+        # Dummy parenthood array
+        parenthood = np.array([-1, -1])[np.newaxis, :]
 
     # Extract edges and edge features from nodes
-    edgesdf = EdgeExtractor(
-        nodesdf, nofframes=3, parenthood=parenthood, **kwargs
-    )
+    print("Creating graph edges...")
+    edgesdf = EdgeExtractor(nodesdf, parenthood=parenthood, **kwargs)
 
     # Split the nodes dataframe into features and labels
     nodefeatures, nfsolution = DataframeSplitter(
@@ -380,17 +385,6 @@ def GraphExtractor(sequence: dt.Feature = None, **kwargs):
         edgesdf, props=("feature",), **kwargs
     )
 
-    # If validation is enabled, the sparse adjacency matrix
-    # contains the frame index for each edge (mainly for
-    # visualization porposes)
-    validation = list(
-        map(
-            lambda prop: prop["validation"]
-            if "validation" in prop.keys()
-            else False,
-            sequence[0].properties,
-        )
-    )
     if np.any(validation):
         # Add frames to the adjacency matrix
         frames = edgesdf.filter(like="frame").to_numpy()
@@ -411,9 +405,17 @@ def GraphExtractor(sequence: dt.Feature = None, **kwargs):
         (np.arange(0, edgeweights.shape[0]), edgeweights), axis=1
     )
 
+    # Extract set ids
+    nodesets = nodesdf["set"].to_numpy()
+    edgesets = edgesdf["set"].to_numpy()
+
+    if global_property is None:
+        global_property = np.zeros(np.unique(nodesdf["set"]).shape[0])
+
     return (
         (nodefeatures, edgefeatures, sparseadjmtx, edgeweights),
-        (nfsolution, efsolution),
+        (nfsolution, efsolution, global_property),
+        (nodesets, edgesets),
     )
 
 

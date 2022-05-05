@@ -54,13 +54,9 @@ class Microscope(StructuralFeature):
 
         # Grab properties from the objective to pass to the sample
         additional_sample_kwargs = self._objective.properties()
-        propagate_data_to_dependencies(
-            self._sample, **additional_sample_kwargs
-        )
+        propagate_data_to_dependencies(self._sample, **additional_sample_kwargs)
 
-        with u.context(
-            "dt", pixel_size=additional_sample_kwargs["voxel_size"][0]
-        ):
+        with u.context("dt", pixel_size=additional_sample_kwargs["voxel_size"][0]):
             list_of_scatterers = self._sample()
 
         if not isinstance(list_of_scatterers, list):
@@ -206,12 +202,8 @@ class Optics(Feature):
         x_radius = R[0] * shape[0]
         y_radius = R[1] * shape[1]
 
-        x = (
-            np.linspace(-(shape[0] / 2), shape[0] / 2 - 1, shape[0])
-        ) / x_radius + 1e-8
-        y = (
-            np.linspace(-(shape[1] / 2), shape[1] / 2 - 1, shape[1])
-        ) / y_radius + 1e-8
+        x = (np.linspace(-(shape[0] / 2), shape[0] / 2 - 1, shape[0])) / x_radius + 1e-8
+        y = (np.linspace(-(shape[1] / 2), shape[1] / 2 - 1, shape[1])) / y_radius + 1e-8
 
         W, H = np.meshgrid(y, x)
         W = maybe_cupy(W)
@@ -260,24 +252,16 @@ class Optics(Feature):
 
         # Replace None entries with current limit
         output_region[0] = (
-            output_region[0]
-            if not output_region[0] is None
-            else new_limits[0, 0]
+            output_region[0] if not output_region[0] is None else new_limits[0, 0]
         )
         output_region[1] = (
-            output_region[1]
-            if not output_region[1] is None
-            else new_limits[0, 1]
+            output_region[1] if not output_region[1] is None else new_limits[0, 1]
         )
         output_region[2] = (
-            output_region[2]
-            if not output_region[2] is None
-            else new_limits[1, 0]
+            output_region[2] if not output_region[2] is None else new_limits[1, 0]
         )
         output_region[3] = (
-            output_region[3]
-            if not output_region[3] is None
-            else new_limits[1, 1]
+            output_region[3] if not output_region[3] is None else new_limits[1, 1]
         )
 
         for i in range(2):
@@ -353,9 +337,7 @@ class Fluorescence(Optics):
 
         # Extract indexes of the output region
         pad = kwargs.get("padding", (0, 0, 0, 0))
-        output_region = np.array(
-            kwargs.get("output_region", (None, None, None, None))
-        )
+        output_region = np.array(kwargs.get("output_region", (None, None, None, None)))
         output_region[0] = (
             None
             if output_region[0] is None
@@ -435,9 +417,7 @@ class Fluorescence(Optics):
 
         output_image = output_image[pad[0] : -pad[2], pad[1] : -pad[3]]
 
-        output_image.properties = (
-            illuminated_volume.properties + pupils.properties
-        )
+        output_image.properties = illuminated_volume.properties + pupils.properties
 
         return output_image
 
@@ -489,9 +469,7 @@ class Brightfield(Optics):
 
         # Extract indexes of the output region
         pad = kwargs.get("padding", (0, 0, 0, 0))
-        output_region = np.array(
-            kwargs.get("output_region", (None, None, None, None))
-        )
+        output_region = np.array(kwargs.get("output_region", (None, None, None, None)))
         output_region[0] = (
             None
             if output_region[0] is None
@@ -520,9 +498,7 @@ class Brightfield(Optics):
         ]
         z_limits = limits[2, :]
 
-        output_image = Image(
-            image.maybe_cupy(np.zeros((*padded_volume.shape[0:2], 1)))
-        )
+        output_image = Image(image.maybe_cupy(np.zeros((*padded_volume.shape[0:2], 1))))
 
         index_iterator = range(padded_volume.shape[2])
         z_iterator = np.linspace(
@@ -541,10 +517,7 @@ class Brightfield(Optics):
 
         pupils = [
             self._pupil(
-                volume.shape[:2],
-                defocus=[1],
-                include_aberration=False,
-                **kwargs
+                volume.shape[:2], defocus=[1], include_aberration=False, **kwargs
             )[0],
             self._pupil(
                 volume.shape[:2],
@@ -556,18 +529,14 @@ class Brightfield(Optics):
 
         pupil_step = np.fft.fftshift(pupils[0])
 
-        light_in = image.maybe_cupy(
-            np.ones(volume.shape[:2], dtype=np.complex)
-        )
+        light_in = image.maybe_cupy(np.ones(volume.shape[:2], dtype=np.complex))
         light_in = self.illumination.resolve(light_in)
         light_in = np.fft.fft2(light_in)
 
         K = 2 * np.pi / kwargs["wavelength"]
 
         field_z = [field.get_property("z") for field in fields]
-        field_offsets = [
-            field.get_property("offset_z", default=0) for field in fields
-        ]
+        field_offsets = [field.get_property("offset_z", default=0) for field in fields]
 
         z = z_limits[1]
         for i, z in zip(index_iterator, z_iterator):
@@ -592,9 +561,9 @@ class Brightfield(Optics):
                         * kwargs["refractive_index_medium"]
                         * (z - fz)
                     )
-                    light_in += np.fft.fft2(
-                        fields[idx][:, :, 0]
-                    ) * np.fft.fftshift(propagation_matrix)
+                    light_in += np.fft.fft2(fields[idx][:, :, 0]) * np.fft.fftshift(
+                        propagation_matrix
+                    )
                     to_remove.append(idx)
 
             for idx in reversed(to_remove):
@@ -674,11 +643,7 @@ class IlluminationGradient(Feature):
         **kwargs
     ):
         super().__init__(
-            gradient=gradient,
-            constant=constant,
-            vmin=vmin,
-            vmax=vmax,
-            **kwargs
+            gradient=gradient, constant=constant, vmin=vmin, vmax=vmax, **kwargs
         )
 
     def get(self, image, gradient, constant, vmin, vmax, **kwargs):
@@ -731,13 +696,7 @@ def _get_position(image, mode="corner", return_z=False):
     elif len(position) == 2:
         if return_z:
             outp = (
-                np.array(
-                    [
-                        position[0],
-                        position[1],
-                        image.get_property("z", default=0),
-                    ]
-                )
+                np.array([position[0], position[1], image.get_property("z", default=0)])
                 - shift
             )
             return outp
@@ -762,18 +721,10 @@ def _create_volume(
     volume = np.zeros((1, 1, 1), dtype=np.complex)
     limits = None
     OR = np.zeros((4,))
-    OR[0] = (
-        np.inf if output_region[0] is None else int(output_region[0] - pad[0])
-    )
-    OR[1] = (
-        -np.inf if output_region[1] is None else int(output_region[1] - pad[1])
-    )
-    OR[2] = (
-        np.inf if output_region[2] is None else int(output_region[2] + pad[2])
-    )
-    OR[3] = (
-        -np.inf if output_region[3] is None else int(output_region[3] + pad[3])
-    )
+    OR[0] = np.inf if output_region[0] is None else int(output_region[0] - pad[0])
+    OR[1] = -np.inf if output_region[1] is None else int(output_region[1] - pad[1])
+    OR[2] = np.inf if output_region[2] is None else int(output_region[2] + pad[2])
+    OR[3] = -np.inf if output_region[3] is None else int(output_region[3] + pad[3])
 
     for scatterer in list_of_scatterers:
 
@@ -783,8 +734,7 @@ def _create_volume(
             scatterer_value = scatterer.get_property("intensity")
         elif scatterer.get_property("refractive_index", None) is not None:
             scatterer_value = (
-                scatterer.get_property("refractive_index")
-                - refractive_index_medium
+                scatterer.get_property("refractive_index") - refractive_index_medium
             )
         else:
             scatterer_value = scatterer.get_property("value")
@@ -840,12 +790,8 @@ def _create_volume(
         for z in range(scatterer.shape[2]):
             if splined_scatterer.dtype == np.complex:
                 splined_scatterer[:, :, z] = (
-                    convolve(
-                        np.real(scatterer[:, :, z]), kernel, mode="constant"
-                    )
-                    + convolve(
-                        np.imag(scatterer[:, :, z]), kernel, mode="constant"
-                    )
+                    convolve(np.real(scatterer[:, :, z]), kernel, mode="constant")
+                    + convolve(np.imag(scatterer[:, :, z]), kernel, mode="constant")
                     * 1j
                 )
             else:
@@ -870,15 +816,9 @@ def _create_volume(
             old_region = (limits - new_limits).astype(np.int32)
             limits = limits.astype(np.int32)
             new_volume[
-                old_region[0, 0] : old_region[0, 0]
-                + limits[0, 1]
-                - limits[0, 0],
-                old_region[1, 0] : old_region[1, 0]
-                + limits[1, 1]
-                - limits[1, 0],
-                old_region[2, 0] : old_region[2, 0]
-                + limits[2, 1]
-                - limits[2, 0],
+                old_region[0, 0] : old_region[0, 0] + limits[0, 1] - limits[0, 0],
+                old_region[1, 0] : old_region[1, 0] + limits[1, 1] - limits[1, 0],
+                old_region[2, 0] : old_region[2, 0] + limits[2, 1] - limits[2, 0],
             ] = volume
             volume = new_volume
             limits = new_limits
@@ -887,14 +827,8 @@ def _create_volume(
 
         # NOTE: Maybe shouldn't be additive.
         volume[
-            int(within_volume_position[0]) : int(
-                within_volume_position[0] + shape[0]
-            ),
-            int(within_volume_position[1]) : int(
-                within_volume_position[1] + shape[1]
-            ),
-            int(within_volume_position[2]) : int(
-                within_volume_position[2] + shape[2]
-            ),
+            int(within_volume_position[0]) : int(within_volume_position[0] + shape[0]),
+            int(within_volume_position[1]) : int(within_volume_position[1] + shape[1]),
+            int(within_volume_position[2]) : int(within_volume_position[2] + shape[2]),
         ] += scatterer
     return volume, limits
